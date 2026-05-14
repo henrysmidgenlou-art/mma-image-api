@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "dependencies": {
+    "@upstash/redis": "latest",
     "openai": "latest",
     "twitter-api-v2": "latest"
   }
