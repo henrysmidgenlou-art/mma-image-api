@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { addRecentGeneration } from "./_recent-store.js";
 
 export const config = {
   maxDuration: 60,
@@ -93,6 +94,14 @@ export default async function handler(req, res) {
     }
 
     const generated = await generateImageFromPrompt(prompt);
+
+    addRecentGeneration({
+      imageUrl: generated.image,
+      prompt,
+      createdAt: new Date().toISOString(),
+      wikiLinks: [],
+      primaryWikiLink: null,
+    });
 
     return res.status(200).json({
       success: true,
