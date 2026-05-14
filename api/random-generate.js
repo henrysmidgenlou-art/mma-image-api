@@ -67,7 +67,7 @@ function extractJson(text) {
 
 async function fetchWikipediaConcepts() {
   const url =
-    "https://en.wikipedia.org/w/api.php?action=query&generator=random&grnnamespace=0&grnlimit=7&prop=extracts&exintro=1&explaintext=1&format=json&origin=*"
+    "https://en.wikipedia.org/w/api.php?action=query&generator=random&grnnamespace=0&grnlimit=8&prop=extracts&exintro=1&explaintext=1&format=json&origin=*"
 
   const response = await fetch(url, {
     headers: {
@@ -118,17 +118,17 @@ async function createSceneFromWikipedia(concepts) {
     .join("\n\n")
 
   const systemPrompt = `
-You create strange fictional character concepts for an autonomous image generator.
+You create strange image concepts for an autonomous image generator.
 
 Return ONLY valid JSON.
 
-The image concept must be based on the supplied random Wikipedia article titles and summaries.
+The concept must be based on the supplied random Wikipedia article titles and summaries.
 Do not use premade characters.
 Do not use celebrities or real identifiable people.
 Do not make a collage of random objects.
-Invent one central fictional character inspired by the Wikipedia material.
+Let the Wikipedia source material determine the subject, setting, props, mood, and visual details.
 
-The final image should feel like a realistic wide-angle flash photograph of a bizarre person or creature in a mundane place.
+The final image should feel like a realistic wide-angle photograph with subtle uncanny early-AI-image weirdness.
 `
 
   const userPrompt = `
@@ -141,10 +141,9 @@ Create one new random image concept.
 Return JSON exactly like this:
 {
   "ticker": "ONEWORD",
-  "subject": "one bizarre fictional character inspired by the Wikipedia articles",
-  "location": "one specific physical place inspired by the Wikipedia articles",
-  "action": "what the character is doing",
-  "visual_details": ["detail one", "detail two", "detail three"],
+  "subject": "one strange central subject inspired by the Wikipedia articles",
+  "setting": "one specific physical setting inspired by the Wikipedia articles",
+  "details": ["detail one", "detail two", "detail three"],
   "mood": "short mood description"
 }
 
@@ -156,10 +155,11 @@ Rules for ticker:
 - not BTC, ETH, SOL, DOGE, PEPE, or MMA
 - strange and memeable
 
-Rules for subject:
-- must be one clear central character
-- weird, unique, uncanny, memorable
-- not just a pile of objects
+Rules for concept:
+- make it visually unique
+- do not force a repeated scene type
+- do not default to diners, basements, computers, traders, robots, or CRT monitors unless Wikipedia source material strongly suggests it
+- create one strong main subject or scene
 - not a logo
 - not a known franchise character
 `
@@ -191,10 +191,9 @@ Rules for subject:
   return {
     ticker: cleanTicker(parsed.ticker || fallbackTicker),
     subject: safeText(parsed.subject, 240),
-    location: safeText(parsed.location, 180),
-    action: safeText(parsed.action, 220),
-    visual_details: Array.isArray(parsed.visual_details)
-      ? parsed.visual_details.map((item) => safeText(item, 160)).slice(0, 5)
+    setting: safeText(parsed.setting, 220),
+    details: Array.isArray(parsed.details)
+      ? parsed.details.map((item) => safeText(item, 160)).slice(0, 5)
       : [],
     mood: safeText(parsed.mood, 120),
   }
@@ -204,79 +203,57 @@ function buildImagePrompt(scene, concepts) {
   const sourceTitles = concepts.map((item) => item.title).join(", ")
 
   return `
-Create one highly realistic wide-angle photograph of a single bizarre fictional character.
-
-The character and scene are inspired by these random Wikipedia article titles:
+Create a completely original AI-generated image inspired by these Wikipedia article titles:
 ${sourceTitles}
 
 Main subject:
 ${scene.subject}
 
-Location:
-${scene.location}
-
-Action:
-${scene.action}
+Setting:
+${scene.setting}
 
 Visual details:
-${scene.visual_details.map((detail) => `- ${detail}`).join("\n")}
+${scene.details.map((detail) => `- ${detail}`).join("\n")}
 
 Mood:
 ${scene.mood}
 
-Reference style direction:
-Make it feel like a strange real photo found online: a deadpan, uncanny character portrait in a mundane indoor place. The subject should be close to the camera, centered, and slightly distorted by a very wide lens. The image should feel lifelike, awkward, eerie, and documentary.
+Let the Wikipedia-inspired concept determine the subject, clothing, environment, props, scale, atmosphere, and mood.
 
-Mandatory camera requirements:
-- real wide-angle lens photograph
-- 18mm to 22mm lens feeling
-- stronger wide-angle distortion than a normal portrait
-- close camera position
-- subject clearly visible and centered
-- large expressive face or strange body proportions from lens distortion
-- hands, face, clothing, and props should feel physically real
-- realistic human-scale environment
-- harsh direct flash or fluorescent overhead lighting
-- dim mundane background
-- believable shadows
-- realistic skin, fabric, plastic, metal, dust, grime, walls, floor, and background textures
-- imperfect documentary snapshot
-- awkward real camera framing
-- gritty low-budget real-world atmosphere
-- strange enough to feel like an uncanny photo someone accidentally found online
-
-Visual look:
-- photorealistic
-- lifelike
+Visual style:
 - realistic photograph
-- uncanny but believable
-- weird character portrait
-- mundane place plus bizarre subject
-- early AI photo-generation weirdness, but with realistic texture
-- not polished
-- not cute
-- not clean corporate art
-- not fantasy concept art
-- not a digital painting
+- wide-angle lens look
+- believable real-world lighting
+- realistic skin, fabric, metal, plastic, and surface textures
+- subtle uncanny early-AI-image quality
+- surreal but lifelike
+- strange and memorable
+- not cartoon
+- not illustration
+- not anime
+- not glossy 3D render
+- not a meme template
+- not a UI screenshot
+- not a diagram
+- not an infographic
 
-Very important:
-- ONE fictional character must be the main subject
-- do not make random objects the main subject
-- do not make a collage of objects
-- do not make a cartoon
-- do not make anime
-- do not make comic-book art
-- do not make glossy 3D mascot art
-- do not make toy-like characters
-- do not make a logo
-- do not make a poster
-- do not make a chart, diagram, UI screenshot, or infographic
-- minimal or no text in the image
-- no readable brand logos
+Composition:
+- one strong main subject or scene
+- visually clear
+- cinematic framing
+- environmental context
+- allow weirdness and unpredictability
+- do not repeat the same type of setting every time
+- do not force diners, basements, CRT monitors, robots, traders, or mascots unless the concept naturally calls for it
+
+The image should feel like a bizarre but believable real photograph.
+
+Rules:
+- no readable logos
+- no heavy text
 - no celebrity likeness
+- no hate, gore, or explicit sexual content
 - no financial promises
-- no gore
-- no explicit sexual content
 `.trim()
 }
 
