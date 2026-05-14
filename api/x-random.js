@@ -1,13 +1,9 @@
 import OpenAI from "openai";
 import { TwitterApi } from "twitter-api-v2";
 
-const SITE_URL = "https://mma-image-api.vercel.app";
-
-const openai = process.env.OPENAI_API_KEY
-  ? new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    })
-  : null;
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -17,9 +13,10 @@ function getEnv(name) {
   return process.env[name] || "";
 }
 
-function checkXCredentials() {
+function checkRequiredEnv() {
   const missing = [];
 
+  if (!getEnv("OPENAI_API_KEY")) missing.push("OPENAI_API_KEY");
   if (!getEnv("X_API_KEY")) missing.push("X_API_KEY");
   if (!getEnv("X_API_SECRET")) missing.push("X_API_SECRET");
   if (!getEnv("X_ACCESS_TOKEN")) missing.push("X_ACCESS_TOKEN");
@@ -50,7 +47,7 @@ function makeTickerFromTitle(title = "") {
   return `$${ticker}`;
 }
 
-function makeSafeTweet(title, wikiLink) {
+function makeTweetText(title, wikiLink) {
   const ticker = makeTickerFromTitle(title);
 
   return `${ticker}
@@ -99,7 +96,7 @@ async function fetchRandomWikipedia() {
 
         return {
           title: page.title || "Random Wikipedia",
-          extract: page.extract || "",
+          extract: page.extract || page.title || "",
           url: page.fullurl || `https://en.wikipedia.org/?curid=${page.pageid}`,
           source: "wikipedia-api",
         };
@@ -108,7 +105,7 @@ async function fetchRandomWikipedia() {
       if (data?.title) {
         return {
           title: data.title || "Random Wikipedia",
-          extract: data.extract || "",
+          extract: data.extract || data.title || "",
           url:
             data.content_urls?.desktop?.page ||
             data.content_urls?.mobile?.page ||
@@ -126,13 +123,13 @@ function makeImagePrompt(wiki) {
   return `
 Create a lifelike wide-angle documentary photograph inspired by this random Wikipedia topic.
 
-Wikipedia title:
+Topic:
 ${wiki.title}
 
-Wikipedia context:
+Context:
 ${wiki.extract || wiki.title}
 
-Style rules:
+Style:
 - realistic photograph
 - wide-angle lens
 - natural lighting
@@ -148,10 +145,6 @@ Style rules:
 }
 
 async function generateImageBuffer(wiki) {
-  if (!openai) {
-    throw new Error("Missing OPENAI_API_KEY in Vercel.");
-  }
-
   const prompt = makeImagePrompt(wiki);
 
   const image = await openai.images.generate({
@@ -163,13 +156,19 @@ async function generateImageBuffer(wiki) {
   const b64 = image?.data?.[0]?.b64_json;
 
   if (!b64) {
-    throw new Error("OpenAI did not return image data.");
+    throw new Error("OpenAI image generation succeeded, but no base64 image was returned.");
   }
 
-  return Buffer.from(b64, "base64");
+  const buffer = Buffer.from(b64, "base64");
+
+  if (!buffer || buffer.length < 1000) {
+    throw new Error("Generated image buffer was empty or too small.");
+  }
+
+  return buffer;
 }
 
-async function postToX(tweetText, imageBuffer) {
+async function postToXWithImage(tweetText, imageBuffer) {
   const xClient = new TwitterApi({
     appKey: getEnv("X_API_KEY"),
     appSecret: getEnv("X_API_SECRET"),
@@ -177,26 +176,25 @@ async function postToX(tweetText, imageBuffer) {
     accessSecret: getEnv("X_ACCESS_SECRET"),
   });
 
-  let mediaIds = [];
+  const mediaId = await xClient.v1.uploadMedia(imageBuffer, {
+    mimeType: "image/png",
+  });
 
-  if (imageBuffer) {
-    const mediaId = await xClient.v1.uploadMedia(imageBuffer, {
-      mimeType: "image/png",
-    });
-
-    mediaIds = [mediaId];
+  if (!mediaId) {
+    throw new Error("X media upload failed. No media ID returned.");
   }
 
-  if (mediaIds.length > 0) {
-    return await xClient.v2.tweet({
-      text: tweetText,
-      media: {
-        media_ids: mediaIds,
-      },
-    });
-  }
+  const posted = await xClient.v2.tweet({
+    text: tweetText,
+    media: {
+      media_ids: [mediaId],
+    },
+  });
 
-  return await xClient.v2.tweet(tweetText);
+  return {
+    posted,
+    mediaId,
+  };
 }
 
 export default async function handler(req, res) {
@@ -215,58 +213,65 @@ export default async function handler(req, res) {
     req.query?.debug === "true" ||
     req.body?.debug === true;
 
-  try {
-    const wiki = await fetchRandomWikipedia();
-    const tweetText = makeSafeTweet(wiki.title, wiki.url);
+  const testImageMode =
+    req.query?.testImage === "1" ||
+    req.query?.testImage === "true" ||
+    req.body?.testImage === true;
 
-    if (debugMode) {
+  try {
+    const missing = checkRequiredEnv();
+
+    if (missing.length > 0) {
+      return res.status(500).json({
+        success: false,
+        error: "Missing required environment variables in Vercel.",
+        missing,
+      });
+    }
+
+    const wiki = await fetchRandomWikipedia();
+    const tweetText = makeTweetText(wiki.title, wiki.url);
+
+    if (debugMode && !testImageMode) {
       return res.status(200).json({
         success: true,
         debug: true,
-        message: "Debug worked. No post was sent to X.",
+        message: "Debug worked. No image generated and no post sent to X.",
         wiki,
         tweetText,
         tweetLength: tweetText.length,
         hasOpenAIKey: Boolean(process.env.OPENAI_API_KEY),
         imageModel: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1",
-        missingXCredentials: checkXCredentials(),
       });
     }
 
-    const missingXCredentials = checkXCredentials();
+    const imageBuffer = await generateImageBuffer(wiki);
 
-    if (missingXCredentials.length > 0) {
-      return res.status(500).json({
-        success: false,
-        error: "Missing X environment variables in Vercel.",
-        missing: missingXCredentials,
+    if (debugMode && testImageMode) {
+      return res.status(200).json({
+        success: true,
+        debug: true,
+        testImage: true,
+        message: "Image generation worked. No post sent to X.",
+        wiki,
+        tweetText,
+        tweetLength: tweetText.length,
+        imageBytes: imageBuffer.length,
+        imageModel: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1",
       });
     }
 
-    let imageBuffer = null;
-    let imageGenerated = false;
-
-    try {
-      imageBuffer = await generateImageBuffer(wiki);
-      imageGenerated = true;
-    } catch (imageError) {
-      console.error("Image generation failed. Posting text only.", imageError);
-      imageBuffer = null;
-      imageGenerated = false;
-    }
-
-    const posted = await postToX(tweetText, imageBuffer);
+    const result = await postToXWithImage(tweetText, imageBuffer);
 
     return res.status(200).json({
       success: true,
-      message: imageGenerated
-        ? "Posted to X with image."
-        : "Posted to X text only because image generation failed.",
-      tweet: posted?.data || posted,
+      message: "Posted to X with image.",
+      tweet: result.posted?.data || result.posted,
+      mediaId: result.mediaId,
       wiki,
       tweetText,
       tweetLength: tweetText.length,
-      imageGenerated,
+      imageBytes: imageBuffer.length,
     });
   } catch (error) {
     console.error("x-random failed:", error);
