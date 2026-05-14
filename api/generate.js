@@ -1,200 +1,353 @@
+import crypto from "crypto"
 import OpenAI from "openai"
-import { put } from "@vercel/blob"
-import { Redis } from "@upstash/redis"
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
 
-const redisUrl =
-  process.env.KV_REST_API_URL ||
+const X_API_KEY = process.env.X_API_KEY
+const X_API_SECRET = process.env.X_API_SECRET
+const X_ACCESS_TOKEN = process.env.X_ACCESS_TOKEN
+const X_ACCESS_SECRET = process.env.X_ACCESS_SECRET
+const BOT_SECRET = process.env.BOT_SECRET || process.env.SECRET || ""
+const OPENAI_IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1"
+
+const UPSTASH_URL =
+  process.env.UPSTASH_REDIS_REST_KV_REST_API_URL ||
   process.env.UPSTASH_REDIS_REST_URL ||
-  process.env.UPSTASH_REDIS_REST_KV_REST_API_URL
-
-const redisToken =
-  process.env.KV_REST_API_TOKEN ||
+  ""
+const UPSTASH_TOKEN =
+  process.env.UPSTASH_REDIS_REST_KV_REST_API_TOKEN ||
   process.env.UPSTASH_REDIS_REST_TOKEN ||
-  process.env.UPSTASH_REDIS_REST_KV_REST_API_TOKEN
+  ""
 
-const redis =
-  redisUrl && redisToken
-    ? new Redis({
-        url: redisUrl,
-        token: redisToken,
-      })
-    : null
-
-function setCors(res) {
-  res.setHeader("Access-Control-Allow-Origin", "*")
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS")
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type")
+function unauthorized(res) {
+  return res.status(401).json({ error: "Unauthorized." })
 }
 
-function looksUnsafe(prompt) {
-  const bannedWords = [
-    "nude",
-    "porn",
-    "sex",
-    "gore",
-    "kill",
-    "murder",
-    "racist",
-    "terrorist",
-  ]
-
-  const lower = prompt.toLowerCase()
-  return bannedWords.some((word) => lower.includes(word))
+function checkSecret(req) {
+  const incoming =
+    req.query.secret ||
+    req.headers["x-bot-secret"] ||
+    req.headers["x-secret"] ||
+    ""
+  return BOT_SECRET && incoming === BOT_SECRET
 }
 
-function cleanPublicPrompt(prompt) {
-  return prompt.replace(/\s+/g, " ").trim().slice(0, 120)
+function percentEncode(str = "") {
+  return encodeURIComponent(str)
+    .replace(/[!*()']/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase())
 }
 
-function buildImagePrompt(prompt) {
+function buildQueryString(params = {}) {
+  const entries = Object.entries(params).filter(
+    ([, v]) => v !== undefined && v !== null && v !== ""
+  )
+  if (!entries.length) return ""
+  return entries
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `${percentEncode(k)}=${percentEncode(String(v))}`)
+    .join("&")
+}
+
+function buildOAuthHeader(method, url, queryParams = {}, bodyParams = {}) {
+  const oauth = {
+    oauth_consumer_key: X_API_KEY,
+    oauth_nonce: crypto.randomBytes(16).toString("hex"),
+    oauth_signature_method: "HMAC-SHA1",
+    oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
+    oauth_token: X_ACCESS_TOKEN,
+    oauth_version: "1.0",
+  }
+
+  const allParams = {
+    ...queryParams,
+    ...bodyParams,
+    ...oauth,
+  }
+
+  const parameterString = Object.keys(allParams)
+    .sort()
+    .map((key) => `${percentEncode(key)}=${percentEncode(String(allParams[key]))}`)
+    .join("&")
+
+  const baseString = [
+    method.toUpperCase(),
+    percentEncode(url),
+    percentEncode(parameterString),
+  ].join("&")
+
+  const signingKey = `${percentEncode(X_API_SECRET)}&${percentEncode(
+    X_ACCESS_SECRET
+  )}`
+
+  const signature = crypto
+    .createHmac("sha1", signingKey)
+    .update(baseString)
+    .digest("base64")
+
+  oauth.oauth_signature = signature
+
+  const header =
+    "OAuth " +
+    Object.keys(oauth)
+      .sort()
+      .map((key) => `${percentEncode(key)}="${percentEncode(oauth[key])}"`)
+      .join(", ")
+
+  return header
+}
+
+async function xFetch(method, url, { query = {}, form = null, json = null } = {}) {
+  const qs = buildQueryString(query)
+  const fullUrl = qs ? `${url}?${qs}` : url
+
+  let headers = {}
+  let body
+
+  if (form) {
+    headers["Authorization"] = buildOAuthHeader(method, url, query, form)
+    headers["Content-Type"] = "application/x-www-form-urlencoded"
+    body = new URLSearchParams(form).toString()
+  } else {
+    headers["Authorization"] = buildOAuthHeader(method, url, query, {})
+    if (json) {
+      headers["Content-Type"] = "application/json"
+      body = JSON.stringify(json)
+    }
+  }
+
+  const resp = await fetch(fullUrl, {
+    method,
+    headers,
+    body,
+  })
+
+  const text = await resp.text()
+  let data
+  try {
+    data = JSON.parse(text)
+  } catch {
+    data = text
+  }
+
+  if (!resp.ok) {
+    throw new Error(
+      `X request failed (${resp.status}): ${
+        typeof data === "string" ? data : JSON.stringify(data)
+      }`
+    )
+  }
+
+  return data
+}
+
+async function uploadMediaToX(base64Image) {
+  const data = await xFetch("POST", "https://upload.twitter.com/1.1/media/upload.json", {
+    form: {
+      media_data: base64Image,
+    },
+  })
+
+  if (!data.media_id_string) {
+    throw new Error("X media upload failed.")
+  }
+
+  return data.media_id_string
+}
+
+async function createTweet(statusText, mediaId) {
+  const payload = {
+    text: statusText,
+  }
+
+  if (mediaId) {
+    payload.media = {
+      media_ids: [mediaId],
+    }
+  }
+
+  const data = await xFetch("POST", "https://api.twitter.com/2/tweets", {
+    json: payload,
+  })
+
+  return data
+}
+
+async function upstashGet(key) {
+  if (!UPSTASH_URL || !UPSTASH_TOKEN) return null
+  const resp = await fetch(`${UPSTASH_URL}/get/${encodeURIComponent(key)}`, {
+    headers: {
+      Authorization: `Bearer ${UPSTASH_TOKEN}`,
+    },
+  })
+  if (!resp.ok) return null
+  const data = await resp.json()
+  return data?.result ?? null
+}
+
+async function upstashSet(key, value) {
+  if (!UPSTASH_URL || !UPSTASH_TOKEN) return null
+  await fetch(`${UPSTASH_URL}/set/${encodeURIComponent(key)}/${encodeURIComponent(value)}`, {
+    headers: {
+      Authorization: `Bearer ${UPSTASH_TOKEN}`,
+    },
+  })
+}
+
+async function getTrendingCoinGecko() {
+  const resp = await fetch("https://api.coingecko.com/api/v3/search/trending", {
+    headers: { Accept: "application/json" },
+  })
+  const data = await resp.json()
+  const coins = data?.coins || []
+
+  const mapped = coins
+    .map((entry) => entry.item)
+    .filter(Boolean)
+    .map((item) => ({
+      source: "coingecko_trending",
+      id: `cg:${item.id}`,
+      symbol: item.symbol || "",
+      name: item.name || "",
+      marketCapRank: item.market_cap_rank || null,
+    }))
+
+  return mapped
+}
+
+function pickCandidate(candidates) {
+  if (!candidates.length) return null
+  const usable = candidates.filter((c) => c.name && c.symbol)
+  if (!usable.length) return null
+  return usable[Math.floor(Math.random() * usable.length)]
+}
+
+function buildTrendPrompt(item) {
   return `
-Create one highly realistic wide-angle photograph based on this user request:
+Create a completely original AI-generated image inspired by this trending topic:
 
-${prompt}
+Name: ${item.name}
+Ticker: ${item.symbol}
 
-Reference style direction:
-Make it feel like a strange real photo found online: a deadpan, uncanny subject in a mundane indoor place. The subject should be close to the camera, centered, and slightly distorted by a very wide lens. The image should feel lifelike, awkward, eerie, documentary, and memorable.
+Create one strange, unique main subject or scene as the focus of the image.
+The subject, mood, props, environment, and details should be inspired by the name and energy of the topic above.
 
-Mandatory camera requirements:
-- real wide-angle lens photograph
-- 18mm to 22mm lens feeling
-- stronger wide-angle distortion than a normal portrait
-- close camera position
-- one clear central subject
-- subject clearly visible and centered
-- large expressive face, hands, body, or object proportions from lens distortion
-- realistic human-scale environment
-- harsh direct flash or fluorescent overhead lighting
-- dim mundane background
-- believable shadows
-- realistic skin, fabric, plastic, metal, dust, grime, walls, floor, and background textures
-- imperfect documentary snapshot
-- awkward real camera framing
-- gritty low-budget real-world atmosphere
-- strange enough to feel like an uncanny photo someone accidentally found online
-
-Visual look:
-- photorealistic
-- lifelike
+Visual style:
 - realistic photograph
-- uncanny but believable
-- weird character portrait or strange central subject
-- mundane place plus bizarre subject
-- early AI photo-generation weirdness, but with realistic texture
-- not polished
-- not cute
-- not clean corporate art
-- not fantasy concept art
-- not a digital painting
+- wide-angle lens look
+- believable real-world lighting
+- realistic skin, fabric, metal, and surface textures
+- subtle uncanny early-AI-image quality
+- surreal but lifelike
+- strange and memorable
+- not cartoon
+- not illustration
+- not anime
+- not glossy 3D render
+- not a meme template
+- not a UI screenshot
+- not a diagram
+- not an infographic
 
-Very important:
-- one main subject only
-- do not make random objects the main subject unless the user specifically asks for an object
-- do not make a collage of objects
-- do not make a cartoon
-- do not make anime
-- do not make comic-book art
-- do not make glossy 3D mascot art
-- do not make toy-like characters
-- do not make a logo
-- do not make a poster
-- do not make a chart, diagram, UI screenshot, or infographic
-- minimal or no text in the image
+Composition:
+- one strong main subject or scene
+- cinematic framing
+- environmental context
+- visually clear and interesting
+
+The result should feel like an unusual but believable real photograph.
+
+Rules:
 - no readable brand logos
+- no heavy text
 - no celebrity likeness
 - no financial promises
-- no buy now text
-- no 100x text
-- no gore
-- no explicit sexual content
+- no hate, gore, or explicit sexual content
 `.trim()
 }
 
+async function generateImageBase64(prompt) {
+  const result = await openai.images.generate({
+    model: OPENAI_IMAGE_MODEL,
+    prompt,
+    size: "1024x1024",
+  })
+
+  const b64 = result?.data?.[0]?.b64_json
+  if (!b64) {
+    throw new Error("No image returned from OpenAI.")
+  }
+  return b64
+}
+
+function buildTrendCaption(item) {
+  const ticker = (item.symbol || item.name || "MMA").replace(/[^A-Za-z0-9]/g, "").toUpperCase()
+  return `$${ticker}`
+}
+
 export default async function handler(req, res) {
-  setCors(res)
-
-  if (req.method === "OPTIONS") {
-    return res.status(200).end()
-  }
-
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Use POST instead." })
-  }
-
   try {
-    const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body
-    const prompt = body?.prompt
-
-    if (!prompt || typeof prompt !== "string") {
-      return res.status(400).json({ error: "Prompt is required." })
+    if (!checkSecret(req)) {
+      return unauthorized(res)
     }
 
-    if (prompt.length > 400) {
-      return res.status(400).json({
-        error: "Prompt is too long. Keep it under 400 characters.",
+    const dryRun =
+      req.query.dryRun === "1" ||
+      req.query.dryRun === "true" ||
+      req.query.test === "1"
+
+    const candidates = await getTrendingCoinGecko()
+    const selected = pickCandidate(candidates)
+
+    if (!selected) {
+      return res.status(200).json({
+        status: "ok",
+        skipped: "No clean trend candidates found.",
       })
     }
 
-    if (looksUnsafe(prompt)) {
-      return res.status(400).json({
-        error: "Try a safer prompt.",
+    const recentKey = `mma:x-trend:last:${selected.id}`
+    const already = await upstashGet(recentKey)
+    if (already && !dryRun) {
+      return res.status(200).json({
+        status: "ok",
+        skipped: "Recently used this trend candidate already.",
+        selected,
       })
     }
 
-    const finalPrompt = buildImagePrompt(prompt)
+    const caption = buildTrendCaption(selected)
+    const imagePrompt = buildTrendPrompt(selected)
 
-    const result = await openai.images.generate({
-      model: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1",
-      prompt: finalPrompt,
-      size: "1024x1024",
-      quality: "high",
-    })
-
-    const imageBase64 = result.data?.[0]?.b64_json
-
-    if (!imageBase64) {
-      return res.status(500).json({ error: "No image was generated." })
+    if (dryRun) {
+      return res.status(200).json({
+        status: "ok",
+        dryRun: true,
+        selected,
+        caption,
+        imagePrompt,
+        allCandidates: candidates,
+      })
     }
 
-    const imageBuffer = Buffer.from(imageBase64, "base64")
+    const imageBase64 = await generateImageBase64(imagePrompt)
+    const mediaId = await uploadMediaToX(imageBase64)
+    const tweet = await createTweet(caption, mediaId)
 
-    const filename = `generations/${Date.now()}-${Math.random()
-      .toString(36)
-      .slice(2)}.png`
-
-    const blob = await put(filename, imageBuffer, {
-      access: "public",
-      contentType: "image/png",
-    })
-
-    const imageUrl = blob.url
-
-    const item = {
-      id: filename,
-      imageUrl,
-      prompt: cleanPublicPrompt(prompt),
-      createdAt: new Date().toISOString(),
-    }
-
-    if (redis) {
-      await redis.lpush("mma:recent-generations", JSON.stringify(item))
-      await redis.ltrim("mma:recent-generations", 0, 9)
-    }
+    await upstashSet(recentKey, String(Date.now()))
 
     return res.status(200).json({
-      image: `data:image/png;base64,${imageBase64}`,
-      imageUrl,
+      status: "ok",
+      trendMode: true,
+      selected,
+      caption,
+      postedTweetId: tweet?.data?.id || null,
     })
   } catch (error) {
-    console.error("Image generation failed:", error)
-
     return res.status(500).json({
-      error: "Image generation failed.",
-      details: error?.message || "Unknown error",
+      error: "x-trend failed.",
+      details: error.message || String(error),
     })
   }
 }
