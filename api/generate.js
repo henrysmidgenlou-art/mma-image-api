@@ -1,204 +1,112 @@
-import OpenAI from "openai"
-import { put } from "@vercel/blob"
-import { Redis } from "@upstash/redis"
+import OpenAI from "openai";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+export const config = {
+  maxDuration: 60,
+};
 
-const redisUrl =
-  process.env.KV_REST_API_URL ||
-  process.env.UPSTASH_REDIS_REST_URL ||
-  process.env.UPSTASH_REDIS_REST_KV_REST_API_URL
-
-const redisToken =
-  process.env.KV_REST_API_TOKEN ||
-  process.env.UPSTASH_REDIS_REST_TOKEN ||
-  process.env.UPSTASH_REDIS_REST_KV_REST_API_TOKEN
-
-const redis =
-  redisUrl && redisToken
-    ? new Redis({
-        url: redisUrl,
-        token: redisToken,
-      })
-    : null
-
-function setCors(res) {
-  res.setHeader("Access-Control-Allow-Origin", "*")
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS, GET")
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type")
+function setCorsHeaders(res) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Cache-Control", "no-store");
 }
 
-function looksUnsafe(prompt) {
-  const bannedWords = [
-    "nude",
-    "porn",
-    "sex",
-    "gore",
-    "kill",
-    "murder",
-    "racist",
-    "terrorist",
-  ]
+function getOpenAIClient() {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error("Missing OPENAI_API_KEY in Vercel.");
+  }
 
-  const lower = String(prompt || "").toLowerCase()
-  return bannedWords.some((word) => lower.includes(word))
+  return new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
 }
 
-function cleanPublicPrompt(prompt) {
-  return String(prompt || "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 120)
+function cleanPrompt(prompt = "") {
+  return String(prompt).replace(/\s+/g, " ").trim();
 }
 
-function buildImagePrompt(prompt) {
+function makeFinalPrompt(userPrompt) {
   return `
-Create a completely original AI-generated image based on this user prompt:
+Create a lifelike wide-angle documentary photograph based on this prompt:
 
-${prompt}
+${userPrompt}
 
-Let the user prompt determine the subject, setting, props, clothing, mood, and details.
-
-Visual style:
+Style:
 - realistic photograph
-- wide-angle lens look
-- believable real-world lighting
-- realistic skin, fabric, metal, plastic, and surface textures
-- subtle uncanny early-AI-image quality
-- surreal but lifelike
-- strange and memorable when appropriate
-- not cartoon
-- not illustration
-- not anime
-- not glossy 3D render
-- not a meme template
-- not a UI screenshot
-- not a diagram
-- not an infographic
+- wide-angle lens
+- natural lighting
+- cinematic but believable
+- varied composition
+- no text
+- no captions
+- no logos
+- no watermarks
+`.trim();
+}
 
-Composition:
-- one strong main subject or scene
-- visually clear
-- cinematic framing
-- environmental context
-- allow weirdness and unpredictability
+async function generateImageFromPrompt(prompt) {
+  const openai = getOpenAIClient();
 
-The image should feel like a bizarre but believable real photograph.
+  const finalPrompt = makeFinalPrompt(prompt);
 
-Rules:
-- no readable logos
-- no heavy text
-- no celebrity likeness
-- no hate, gore, or explicit sexual content
-- no financial promises
-`.trim()
+  const image = await openai.images.generate({
+    model: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1",
+    prompt: finalPrompt,
+    size: "1024x1024",
+  });
+
+  const b64 = image?.data?.[0]?.b64_json;
+
+  if (!b64) {
+    throw new Error("OpenAI did not return image data.");
+  }
+
+  return {
+    image: `data:image/png;base64,${b64}`,
+    prompt: finalPrompt,
+    imageBytes: Buffer.from(b64, "base64").length,
+  };
 }
 
 export default async function handler(req, res) {
-  setCors(res)
+  setCorsHeaders(res);
 
   if (req.method === "OPTIONS") {
-    return res.status(200).end()
-  }
-
-  if (req.method === "GET") {
-    return res.status(405).json({ error: "Use POST instead." })
+    return res.status(200).end();
   }
 
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Use POST instead." })
+    return res.status(405).json({
+      success: false,
+      error: "Use POST.",
+    });
   }
 
   try {
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ error: "Missing OPENAI_API_KEY." })
-    }
+    const prompt = cleanPrompt(req.body?.prompt);
 
-    const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body
-    const prompt = body?.prompt
-
-    if (!prompt || typeof prompt !== "string") {
-      return res.status(400).json({ error: "Prompt is required." })
-    }
-
-    if (prompt.length > 400) {
+    if (!prompt) {
       return res.status(400).json({
-        error: "Prompt is too long. Keep it under 400 characters.",
-      })
+        success: false,
+        error: "Missing prompt.",
+      });
     }
 
-    if (looksUnsafe(prompt)) {
-      return res.status(400).json({
-        error: "Try a safer prompt.",
-      })
-    }
-
-    const finalPrompt = buildImagePrompt(prompt)
-
-    const result = await openai.images.generate({
-      model: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1",
-      prompt: finalPrompt,
-      size: "1024x1024",
-      quality: "high",
-    })
-
-    const imageBase64 = result.data?.[0]?.b64_json
-
-    if (!imageBase64) {
-      return res.status(500).json({ error: "No image was generated." })
-    }
-
-    const imageBuffer = Buffer.from(imageBase64, "base64")
-
-    let imageUrl = null
-
-    try {
-      const filename = `generations/site-${Date.now()}-${Math.random()
-        .toString(36)
-        .slice(2)}.png`
-
-      const blob = await put(filename, imageBuffer, {
-        access: "public",
-        contentType: "image/png",
-        addRandomSuffix: true,
-      })
-
-      imageUrl = blob.url
-    } catch (blobError) {
-      console.error("Blob save failed:", blobError?.message || blobError)
-    }
-
-    try {
-      if (redis && imageUrl) {
-        await redis.lpush(
-          "mma:recent-generations",
-          JSON.stringify({
-            id: `site-${Date.now()}`,
-            imageUrl,
-            prompt: cleanPublicPrompt(prompt),
-            createdAt: new Date().toISOString(),
-            source: "framer-prompt",
-          })
-        )
-
-        await redis.ltrim("mma:recent-generations", 0, 9)
-      }
-    } catch (redisError) {
-      console.error("Redis save failed:", redisError?.message || redisError)
-    }
+    const generated = await generateImageFromPrompt(prompt);
 
     return res.status(200).json({
-      image: `data:image/png;base64,${imageBase64}`,
-      imageUrl,
-    })
+      success: true,
+      image: generated.image,
+      prompt: generated.prompt,
+      imageBytes: generated.imageBytes,
+    });
   } catch (error) {
-    console.error("Image generation failed:", error)
+    console.error("generate failed:", error);
 
     return res.status(500).json({
-      error: "Image generation failed.",
-      details: error?.message || "Unknown error",
-    })
+      success: false,
+      error: error.message || "Image generation failed.",
+      details: error.data || error.errors || null,
+    });
   }
 }
