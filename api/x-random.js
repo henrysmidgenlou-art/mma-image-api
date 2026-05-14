@@ -26,141 +26,13 @@ const redisToken =
   process.env.UPSTASH_REDIS_REST_TOKEN ||
   process.env.UPSTASH_REDIS_REST_KV_REST_API_TOKEN
 
-const redis = new Redis({
-  url: redisUrl,
-  token: redisToken,
-})
-
-const TICKER_WORDS = [
-  "GLOOP",
-  "ZORP",
-  "MUNG",
-  "BLOBB",
-  "GRUM",
-  "WORM",
-  "FROG",
-  "GOON",
-  "MELT",
-  "GUNK",
-  "SPORK",
-  "VEX",
-  "GOB",
-  "BAG",
-  "OOZE",
-  "GIGGLE",
-  "NUB",
-  "BLIMP",
-  "SLOP",
-  "MOSS",
-  "YUCK",
-  "WOBBLE",
-  "GRAIL",
-  "VOID",
-  "LURK",
-  "SNORF",
-  "DREG",
-  "BINGLE",
-  "MEEP",
-  "ZAP",
-  "MOLD",
-  "SCRUB",
-  "PLUG",
-  "DUNK",
-  "CRUMB",
-  "BEEP",
-  "SLUDGE",
-  "BOGGLE",
-  "TWONK",
-  "MANGLE",
-]
-
-const CHARACTER_TYPES = [
-  "a hairless frog-like humanoid",
-  "a nervous lizard accountant",
-  "a wet goblin trader",
-  "a pale basement prophet",
-  "a strange bird-faced office worker",
-  "a rubbery alien janitor",
-  "a frog merchant with human hands",
-  "a wrinkled moon-faced delivery man",
-  "a bug-eyed vending machine repairman",
-  "a fish-headed night clerk",
-  "a tiny king in an oversized suit",
-  "a melted-looking crypto gambler",
-  "a mushroom-headed security guard",
-  "a greasy wizard in business casual clothes",
-  "a wide-eyed swamp creature wearing a tie",
-  "a strange humanoid made of candle wax",
-  "a bald monkey-like salesman",
-  "a turtle-faced banker",
-  "a ghostly elevator operator",
-  "a frog priest holding a briefcase",
-  "a bug-eyed man in a cheap raincoat",
-  "a damp goblin sitting in an office chair",
-  "a lumpy creature wearing old sneakers",
-  "a nervous mole-person with a laptop",
-  "a pale humanoid with enormous eyes",
-  "a strange little trader with a huge head",
-]
-
-const LOCATIONS = [
-  "in a fluorescent-lit basement",
-  "inside an abandoned mall food court",
-  "in a dirty office break room",
-  "inside a 1990s computer lab",
-  "in a foggy parking garage",
-  "inside a laundromat at midnight",
-  "in an empty diner",
-  "inside a cluttered server room",
-  "in a weird suburban living room",
-  "inside a concrete bunker",
-  "in a cramped pawn shop",
-  "inside an old arcade",
-  "in a flooded office hallway",
-  "inside a dim convenience store",
-  "in a dusty storage room",
-  "inside a cheap motel lobby",
-  "in a basement trading room",
-  "inside a strange warehouse",
-  "in a narrow hallway with old carpet",
-  "inside a low-ceiling conference room",
-]
-
-const CHARACTER_DETAILS = [
-  "holding a heavy plastic bag full of coins",
-  "standing next to a glowing green candle chart",
-  "clutching a tiny briefcase",
-  "wearing a crooked paper crown",
-  "holding an old keyboard like a sacred object",
-  "staring directly into the camera",
-  "surrounded by scattered receipts",
-  "holding a gold coin between two fingers",
-  "wearing oversized sunglasses indoors",
-  "holding a cracked CRT monitor",
-  "guarding a pile of strange bags",
-  "standing beside a broken vending machine",
-  "holding a tiny glowing frog",
-  "wearing a wrinkled suit that does not fit",
-  "holding a red candle and a green candle",
-  "surrounded by cheap office furniture",
-  "pointing at a mysterious glowing screen",
-  "holding a plastic shopping basket",
-  "sitting in a tiny chair",
-  "standing under harsh ceiling lights",
-]
-
-const PHOTO_STYLES = [
-  "shot with a 24mm wide-angle lens",
-  "shot with a 20mm wide-angle lens",
-  "shot with a 28mm documentary lens",
-  "close wide-angle flash photograph",
-  "awkward real-life documentary photo",
-  "realistic candid photograph",
-  "low-angle wide-angle photograph",
-  "harsh direct flash photography",
-  "strange real-world tabloid photograph",
-  "amateur wide-angle digital camera photo",
-]
+const redis =
+  redisUrl && redisToken
+    ? new Redis({
+        url: redisUrl,
+        token: redisToken,
+      })
+    : null
 
 function setCors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*")
@@ -168,118 +40,269 @@ function setCors(res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type")
 }
 
-function pick(array) {
-  return array[Math.floor(Math.random() * array.length)]
-}
-
 function getQueryValue(value) {
   if (Array.isArray(value)) return value[0]
   return value
 }
 
-function cleanTicker(word) {
-  return String(word || "MMA")
-    .replace(/[^a-zA-Z0-9]/g, "")
-    .toUpperCase()
-    .slice(0, 10) || "MMA"
+function cleanTicker(value) {
+  const cleaned =
+    String(value || "MMA")
+      .replace(/[^a-zA-Z0-9]/g, "")
+      .toUpperCase()
+      .slice(0, 10) || "MMA"
+
+  if (cleaned.length < 3) return "MMA"
+  return cleaned
 }
 
-async function getDailyCount() {
-  const today = new Date().toISOString().slice(0, 10)
-  const key = `mma:random-photo-count:${today}`
-  const count = await redis.get(key)
-  return Number(count || 0)
+function safeText(value, maxLength = 500) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLength)
 }
 
-async function incrementDailyCount() {
-  const today = new Date().toISOString().slice(0, 10)
-  const key = `mma:random-photo-count:${today}`
-  const count = await redis.incr(key)
-  await redis.expire(key, 60 * 60 * 36)
-  return count
+async function fetchWikipediaConcepts() {
+  const url =
+    "https://en.wikipedia.org/w/api.php?action=query&generator=random&grnnamespace=0&grnlimit=8&prop=extracts&exintro=1&explaintext=1&format=json&origin=*"
+
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/json",
+      "User-Agent": "MemeMachineAutomata/1.0",
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(`Wikipedia fetch failed with ${response.status}`)
+  }
+
+  const data = await response.json()
+  const pagesObject = data?.query?.pages || {}
+  const pages = Object.values(pagesObject)
+
+  const concepts = pages
+    .map((page) => ({
+      title: safeText(page.title, 100),
+      extract: safeText(page.extract, 500),
+    }))
+    .filter((item) => item.title)
+
+  if (!concepts.length) {
+    throw new Error("No Wikipedia concepts found.")
+  }
+
+  return concepts
 }
 
 async function getRecentTickers() {
-  const items = await redis.lrange("mma:random-photo-recent-tickers", 0, 30)
+  if (!redis) return []
+  const items = await redis.lrange("mma:random-wiki-recent-tickers", 0, 40)
   return Array.isArray(items) ? items : []
 }
 
 async function rememberTicker(ticker) {
-  await redis.lpush("mma:random-photo-recent-tickers", ticker)
-  await redis.ltrim("mma:random-photo-recent-tickers", 0, 30)
+  if (!redis) return
+
+  await redis.lpush("mma:random-wiki-recent-tickers", ticker)
+  await redis.ltrim("mma:random-wiki-recent-tickers", 0, 40)
 }
 
-async function pickFreshTicker() {
-  const recent = await getRecentTickers()
+async function getDailyCount() {
+  if (!redis) return 0
 
-  for (let i = 0; i < 20; i++) {
-    const ticker = cleanTicker(pick(TICKER_WORDS))
-    if (!recent.includes(ticker)) return ticker
+  const today = new Date().toISOString().slice(0, 10)
+  const key = `mma:random-wiki-count:${today}`
+  const count = await redis.get(key)
+
+  return Number(count || 0)
+}
+
+async function incrementDailyCount() {
+  if (!redis) return null
+
+  const today = new Date().toISOString().slice(0, 10)
+  const key = `mma:random-wiki-count:${today}`
+  const count = await redis.incr(key)
+
+  await redis.expire(key, 60 * 60 * 36)
+
+  return count
+}
+
+function extractJson(text) {
+  const raw = String(text || "").trim()
+
+  try {
+    return JSON.parse(raw)
+  } catch {
+    const match = raw.match(/\{[\s\S]*\}/)
+    if (!match) throw new Error("Text model did not return JSON.")
+    return JSON.parse(match[0])
+  }
+}
+
+function fallbackTickerFromWikipedia(concepts) {
+  const words = concepts
+    .flatMap((item) => item.title.split(/[\s\-_:,.;/()]+/g))
+    .map((word) => word.replace(/[^a-zA-Z0-9]/g, "").toUpperCase())
+    .filter((word) => word.length >= 3 && word.length <= 10)
+
+  return words[0] || "MMA"
+}
+
+async function createSceneFromWikipedia(concepts) {
+  const recentTickers = await getRecentTickers()
+
+  const sourceMaterial = concepts
+    .map(
+      (item, index) =>
+        `${index + 1}. Title: ${item.title}\nSummary: ${item.extract || "No summary available."}`
+    )
+    .join("\n\n")
+
+  const systemPrompt = `
+You create weird fictional character photo concepts for an autonomous meme-image bot.
+
+Return ONLY valid JSON.
+
+The image must be based on the supplied random Wikipedia article titles/summaries.
+Do not use premade characters.
+Do not use celebrities or real identifiable people.
+Do not make a collage of objects.
+Invent one central fictional character inspired by the Wikipedia material.
+The final image should be a realistic wide-angle photograph, not a cartoon.
+`
+
+  const userPrompt = `
+Random Wikipedia source material:
+
+${sourceMaterial}
+
+Recently used ticker words to avoid:
+${recentTickers.join(", ") || "none"}
+
+Create a new random image concept.
+
+Return JSON exactly like this:
+{
+  "ticker": "ONEWORD",
+  "subject": "one bizarre fictional character inspired by the Wikipedia articles",
+  "location": "one specific physical location inspired by the Wikipedia articles",
+  "action": "what the character is doing",
+  "visual_details": ["detail one", "detail two", "detail three"],
+  "camera_style": "real wide-angle lens photograph style",
+  "mood": "short mood description"
+}
+
+Rules for ticker:
+- one word only
+- 3 to 10 letters or numbers
+- no spaces
+- no dollar sign
+- not BTC, ETH, SOL, DOGE, PEPE, or MMA
+- should feel strange and memeable
+`
+
+  const completion = await openai.chat.completions.create({
+    model: process.env.OPENAI_TEXT_MODEL || "gpt-4.1-mini",
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content: systemPrompt,
+      },
+      {
+        role: "user",
+        content: userPrompt,
+      },
+    ],
+  })
+
+  const content = completion.choices?.[0]?.message?.content
+
+  if (!content) {
+    throw new Error("No scene JSON returned from text model.")
   }
 
-  return cleanTicker(pick(TICKER_WORDS))
-}
+  const parsed = extractJson(content)
 
-function buildRandomScene() {
-  const character = pick(CHARACTER_TYPES)
-  const location = pick(LOCATIONS)
-  const detail1 = pick(CHARACTER_DETAILS)
-  const detail2 = pick(CHARACTER_DETAILS)
-  const photoStyle = pick(PHOTO_STYLES)
+  const fallbackTicker = fallbackTickerFromWikipedia(concepts)
 
   return {
-    character,
-    location,
-    detail1,
-    detail2,
-    photoStyle,
+    ticker: cleanTicker(parsed.ticker || fallbackTicker),
+    subject: safeText(parsed.subject, 240),
+    location: safeText(parsed.location, 180),
+    action: safeText(parsed.action, 220),
+    visual_details: Array.isArray(parsed.visual_details)
+      ? parsed.visual_details.map((item) => safeText(item, 160)).slice(0, 5)
+      : [],
+    camera_style:
+      safeText(parsed.camera_style, 160) ||
+      "shot with a 20mm wide-angle lens, harsh direct flash, realistic documentary photograph",
+    mood: safeText(parsed.mood, 120),
   }
 }
 
-function buildImagePrompt(scene) {
+function buildImagePrompt(scene, concepts) {
+  const sourceTitles = concepts.map((item) => item.title).join(", ")
+
   return `
-Create one realistic wide-angle photograph of a single bizarre character.
+Create one realistic wide-angle photograph of a single bizarre fictional character.
+
+The character and scene are inspired by these random Wikipedia article titles:
+${sourceTitles}
 
 Main subject:
-${scene.character}
+${scene.subject}
 
 Location:
 ${scene.location}
 
-Character action/details:
-- ${scene.detail1}
-- ${scene.detail2}
+Action:
+${scene.action}
 
-Camera and realism requirements:
-- ${scene.photoStyle}
-- real photograph look
-- wide-angle lens distortion
+Visual details:
+${scene.visual_details.map((detail) => `- ${detail}`).join("\n")}
+
+Camera style:
+${scene.camera_style}
+
+Mood:
+${scene.mood}
+
+Mandatory photo requirements:
+- real wide-angle lens photograph
+- 18mm to 24mm lens feeling
+- strong wide-angle perspective distortion
+- subject clearly visible and centered
+- one main character only
 - realistic human-scale environment
-- natural but strange lighting
 - harsh direct flash or fluorescent overhead lighting
-- believable shadows
-- realistic skin, fabric, plastic, metal, dust, and grime textures
+- realistic skin, fabric, plastic, metal, dust, grime, walls, floor, and background textures
 - imperfect documentary photo
-- slightly awkward real camera framing
-- subject should be clearly visible and centered
-- the image should feel like a weird real photo someone accidentally found online
+- awkward real camera framing
+- gritty low-budget real-world atmosphere
+- strange enough to feel like an uncanny photo found online
 
 Style:
 - photorealistic
-- uncanny but believable
-- strange character portrait
-- weird internet photography
-- early AI photo-generation feeling, but more realistic
-- gritty, low-budget, real-world atmosphere
+- realistic photograph
+- weird but believable
 - not polished
 - not cute
 - not clean corporate art
+- not fantasy concept art
+- not a digital painting
+- not cartoonish
+- not illustration
 
 Very important:
-- the image must have ONE main character as the subject
-- do not make a collage of random objects
+- ONE fictional character must be the main subject
+- do not make random objects the main subject
+- do not make a collage of objects
 - do not make a cartoon
-- do not make an illustration
 - do not make anime
 - do not make comic-book art
 - do not make glossy 3D mascot art
@@ -296,13 +319,14 @@ Very important:
 `.trim()
 }
 
-function buildPublicRecord({ tweetId, imageUrl, caption, scene }) {
+function buildPublicRecord({ tweetId, imageUrl, caption, scene, concepts }) {
   return {
     id: tweetId || `random-${Date.now()}`,
     imageUrl,
     prompt: caption,
     createdAt: new Date().toISOString(),
-    source: "x-random-photo",
+    source: "x-random-wikipedia-ai-scene",
+    wikiTitles: concepts.map((item) => item.title),
     scene,
   }
 }
@@ -337,17 +361,17 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Missing OPENAI_API_KEY." })
     }
 
+    if (!process.env.OPENAI_TEXT_MODEL) {
+      return res.status(500).json({ error: "Missing OPENAI_TEXT_MODEL." })
+    }
+
     if (
       !process.env.X_API_KEY ||
       !process.env.X_API_SECRET ||
       !process.env.X_ACCESS_TOKEN ||
       !process.env.X_ACCESS_SECRET
     ) {
-      return res.status(500).json({ error: "Missing X API credentials." })
-    }
-
-    if (!redisUrl || !redisToken) {
-      return res.status(500).json({ error: "Missing Redis credentials." })
+      return res.status(500).json({ error: "Missing X credentials." })
     }
 
     const dailyLimit = Number(process.env.RANDOM_DAILY_LIMIT || 8)
@@ -367,22 +391,36 @@ export default async function handler(req, res) {
       }
     }
 
-    stage = "build_prompt"
+    stage = "fetch_wikipedia"
 
-    const ticker = await pickFreshTicker()
-    const caption = `$${ticker}`
-    const scene = buildRandomScene()
-    const imagePrompt = buildImagePrompt(scene)
+    const concepts = await fetchWikipediaConcepts()
+
+    stage = "create_scene"
+
+    let scene = await createSceneFromWikipedia(concepts)
+
+    const recentTickers = await getRecentTickers()
+    let attempts = 0
+
+    while (recentTickers.includes(scene.ticker) && attempts < 3) {
+      scene = await createSceneFromWikipedia(concepts)
+      attempts++
+    }
+
+    const caption = `$${scene.ticker}`
+    const imagePrompt = buildImagePrompt(scene, concepts)
 
     if (dryRun) {
       return res.status(200).json({
         status: "ok",
         dryRun: true,
         caption,
-        ticker,
+        ticker: scene.ticker,
+        wikiTitles: concepts.map((item) => item.title),
         scene,
         imagePrompt,
-        model: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1",
+        textModel: process.env.OPENAI_TEXT_MODEL,
+        imageModel: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1",
       })
     }
 
@@ -410,7 +448,7 @@ export default async function handler(req, res) {
     let imageUrl = null
 
     try {
-      const filename = `generations/random-${Date.now()}-${ticker.toLowerCase()}.png`
+      const filename = `generations/random-${Date.now()}-${scene.ticker.toLowerCase()}.png`
 
       const blob = await put(filename, imageBuffer, {
         access: "public",
@@ -440,11 +478,11 @@ export default async function handler(req, res) {
 
     stage = "save_history"
 
-    await rememberTicker(ticker)
+    await rememberTicker(scene.ticker)
 
     const newCount = await incrementDailyCount()
 
-    if (imageUrl) {
+    if (redis && imageUrl) {
       await redis.lpush(
         "mma:recent-generations",
         JSON.stringify(
@@ -453,9 +491,11 @@ export default async function handler(req, res) {
             imageUrl,
             caption,
             scene,
+            concepts,
           })
         )
       )
+
       await redis.ltrim("mma:recent-generations", 0, 9)
     }
 
@@ -464,12 +504,13 @@ export default async function handler(req, res) {
       randomMode: true,
       postedTweetId: tweet?.data?.id || null,
       caption,
-      ticker,
+      ticker: scene.ticker,
+      wikiTitles: concepts.map((item) => item.title),
       scene,
       imageUrl,
       dailyCount: newCount,
       dailyLimit,
-      imageStyle: "realistic_wide_angle_character_photo",
+      imageStyle: "wikipedia_ai_realistic_wide_angle_character_photo",
     })
   } catch (error) {
     console.error("x-random failed:", {
