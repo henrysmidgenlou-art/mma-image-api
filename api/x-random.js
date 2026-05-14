@@ -1,20 +1,35 @@
-const crypto = require("crypto")
-const OpenAI = require("openai")
-const { TwitterApi } = require("twitter-api-v2")
-const { Redis } = require("@upstash/redis")
+import { createHash } from "crypto"
+import OpenAI from "openai"
+import { TwitterApi } from "twitter-api-v2"
+import { Redis } from "@upstash/redis"
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
-
-const redis = Redis.fromEnv()
 
 const twitterClient = new TwitterApi({
   appKey: process.env.X_API_KEY,
   appSecret: process.env.X_API_SECRET,
   accessToken: process.env.X_ACCESS_TOKEN,
   accessSecret: process.env.X_ACCESS_SECRET,
-}).readWrite
+})
+
+const rwClient = twitterClient.readWrite
+
+const redisUrl =
+  process.env.KV_REST_API_URL ||
+  process.env.UPSTASH_REDIS_REST_URL ||
+  process.env.UPSTASH_REDIS_REST_KV_REST_API_URL
+
+const redisToken =
+  process.env.KV_REST_API_TOKEN ||
+  process.env.UPSTASH_REDIS_REST_TOKEN ||
+  process.env.UPSTASH_REDIS_REST_KV_REST_API_TOKEN
+
+const redis = new Redis({
+  url: redisUrl,
+  token: redisToken,
+})
 
 const RANDOM_WORDS = [
   "frog", "wizard", "basement", "printer", "moon", "candle", "bagel",
@@ -68,10 +83,14 @@ function getQueryValue(value) {
 
 function shuffle(array) {
   const arr = [...array]
+
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1))
-    ;[arr[i], arr[j]] = [arr[j], arr[i]]
+    const temp = arr[i]
+    arr[i] = arr[j]
+    arr[j] = temp
   }
+
   return arr
 }
 
@@ -80,7 +99,7 @@ function pickRandomItems(array, count) {
 }
 
 function hashText(text) {
-  return crypto.createHash("sha1").update(text).digest("hex")
+  return createHash("sha1").update(text).digest("hex")
 }
 
 function truncate(text, maxLength) {
@@ -123,16 +142,16 @@ Rules:
 - no readable brand logos
 - no real celebrity likeness
 - no financial promises
-- no “buy now”
-- no “100x”
+- no buy now text
+- no 100x text
 - no guaranteed profit language
 - no hate, gore, or explicit sexual content
-`
-    .trim()
+`.trim()
 }
 
 function buildCaption(words) {
   const shortWords = words.slice(0, 4).join(" / ")
+
   return truncate(
     `M.M.A. autonomous transmission 🧠⚡️\nSignal words: ${shortWords}\nMachine-made image. No financial advice.`,
     280
@@ -144,96 +163,113 @@ async function generateImageBuffer(prompt) {
     model: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1",
     prompt,
     size: process.env.OPENAI_IMAGE_SIZE || "1024x1024",
+    quality: "medium",
   })
 
-  const image = result?.data?.[0]
+  const imageBase64 = result.data?.[0]?.b64_json
 
-  if (!image) {
+  if (!imageBase64) {
     throw new Error("No image returned from OpenAI.")
   }
 
-  if (image.b64_json) {
-    return Buffer.from(image.b64_json, "base64")
-  }
-
-  if (image.url) {
-    const response = await fetch(image.url)
-    if (!response.ok) {
-      throw new Error(`Failed to fetch generated image URL: ${response.status}`)
-    }
-    const arrayBuffer = await response.arrayBuffer()
-    return Buffer.from(arrayBuffer)
-  }
-
-  throw new Error("Image response did not include b64_json or url.")
-}
-
-async function getUniqueWordSet(force = false) {
-  const tries = 8
-
-  for (let i = 0; i < tries; i++) {
-    const count = 10 + Math.floor(Math.random() * 3) // 10-12 words
-    const words = pickRandomItems(RANDOM_WORDS, count)
-    const signature = words.slice().sort().join("|")
-    const signatureHash = hashText(signature)
-    const dupKey = `mma:random:dup:${signatureHash}`
-
-    if (force) {
-      return { words, signature, signatureHash, dupKey }
-    }
-
-    const exists = await redis.get(dupKey)
-    if (!exists) {
-      return { words, signature, signatureHash, dupKey }
-    }
-  }
-
-  return null
-}
-
-async function incrementDailyCount() {
-  const today = new Date().toISOString().slice(0, 10)
-  const dailyKey = `mma:random:count:${today}`
-  const count = await redis.incr(dailyKey)
-  await redis.expire(dailyKey, 60 * 60 * 24 * 3)
-  return count
+  return Buffer.from(imageBase64, "base64")
 }
 
 async function getDailyCount() {
   const today = new Date().toISOString().slice(0, 10)
   const dailyKey = `mma:random:count:${today}`
   const count = await redis.get(dailyKey)
+
   return Number(count || 0)
 }
 
-module.exports = async function handler(req, res) {
+async function incrementDailyCount() {
+  const today = new Date().toISOString().slice(0, 10)
+  const dailyKey = `mma:random:count:${today}`
+
+  const count = await redis.incr(dailyKey)
+  await redis.expire(dailyKey, 60 * 60 * 24 * 3)
+
+  return count
+}
+
+async function getUniqueWordSet(force = false) {
+  for (let i = 0; i < 8; i++) {
+    const count = 10 + Math.floor(Math.random() * 3)
+    const words = pickRandomItems(RANDOM_WORDS, count)
+    const signature = words.slice().sort().join("|")
+    const signatureHash = hashText(signature)
+    const dupKey = `mma:random:dup:${signatureHash}`
+
+    if (force) {
+      return { words, signatureHash, dupKey }
+    }
+
+    const exists = await redis.get(dupKey)
+
+    if (!exists) {
+      return { words, signatureHash, dupKey }
+    }
+  }
+
+  return null
+}
+
+export default async function handler(req, res) {
+  let stage = "start"
+
   try {
     if (req.method !== "GET" && req.method !== "POST") {
-      return res.status(405).json({ error: "Method not allowed" })
+      return res.status(405).json({ error: "Use GET or POST." })
     }
 
-    const dryRun = getQueryValue(req.query?.dryRun) === "1"
-    const force = getQueryValue(req.query?.force) === "1"
+    const secret = getQueryValue(req.query?.secret)
+    const dryRun =
+      getQueryValue(req.query?.dryRun) === "1" ||
+      getQueryValue(req.query?.dryRun) === "true"
+    const force =
+      getQueryValue(req.query?.force) === "1" ||
+      getQueryValue(req.query?.force) === "true"
+
+    if (!secret || secret !== process.env.BOT_SECRET) {
+      return res.status(401).json({ error: "Unauthorized." })
+    }
 
     if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ error: "Missing OPENAI_API_KEY" })
+      return res.status(500).json({ error: "Missing OPENAI_API_KEY." })
     }
 
-    if (!process.env.X_API_KEY || !process.env.X_API_SECRET || !process.env.X_ACCESS_TOKEN || !process.env.X_ACCESS_SECRET) {
-      return res.status(500).json({ error: "Missing X API credentials" })
+    if (
+      !process.env.X_API_KEY ||
+      !process.env.X_API_SECRET ||
+      !process.env.X_ACCESS_TOKEN ||
+      !process.env.X_ACCESS_SECRET
+    ) {
+      return res.status(500).json({ error: "Missing X API credentials." })
+    }
+
+    if (!redisUrl || !redisToken) {
+      return res.status(500).json({ error: "Missing Redis credentials." })
     }
 
     const dailyLimit = Number(process.env.RANDOM_DAILY_LIMIT || 8)
 
+    stage = "daily_limit"
+
     if (!dryRun && !force) {
       const currentCount = await getDailyCount()
+
       if (currentCount >= dailyLimit) {
         return res.status(200).json({
           status: "ok",
           skipped: `Daily random post limit reached (${dailyLimit}).`,
+          currentCount,
+          dailyLimit,
         })
       }
     }
+
+    stage = "pick_words"
 
     const uniqueSet = await getUniqueWordSet(force)
 
@@ -244,7 +280,7 @@ module.exports = async function handler(req, res) {
       })
     }
 
-    const { words, signatureHash, dupKey } = uniqueSet
+    const { words, dupKey } = uniqueSet
     const prompt = buildPrompt(words)
     const caption = buildCaption(words)
 
@@ -259,20 +295,30 @@ module.exports = async function handler(req, res) {
       })
     }
 
+    stage = "generate_image"
+
     const imageBuffer = await generateImageBuffer(prompt)
 
-    const mediaId = await twitterClient.v1.uploadMedia(imageBuffer, {
+    stage = "upload_media"
+
+    const mediaId = await rwClient.v1.uploadMedia(imageBuffer, {
       mimeType: "image/png",
     })
 
-    const tweet = await twitterClient.v2.tweet({
+    stage = "post_tweet"
+
+    const tweet = await rwClient.v2.tweet({
       text: caption,
       media: {
         media_ids: [mediaId],
       },
     })
 
-    await redis.set(dupKey, "1", { ex: 60 * 60 * 24 * 30 })
+    stage = "save_history"
+
+    await redis.set(dupKey, "1", {
+      ex: 60 * 60 * 24 * 30,
+    })
 
     const newCount = await incrementDailyCount()
 
@@ -297,13 +343,22 @@ module.exports = async function handler(req, res) {
       dailyCount: newCount,
       dailyLimit,
       duplicateProtection: true,
+      imageStyle: "classic_ai_surreal_random",
     })
   } catch (error) {
-    console.error("x-random error:", error)
+    console.error("x-random error:", {
+      stage,
+      message: error?.message,
+      code: error?.code,
+      data: error?.data,
+    })
 
     return res.status(500).json({
       error: "Random post bot failed.",
+      stage,
       details: error?.message || "Unknown error",
+      code: error?.code || null,
+      data: error?.data || null,
     })
   }
 }
