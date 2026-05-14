@@ -1,531 +1,448 @@
-import OpenAI from "openai"
-import { TwitterApi } from "twitter-api-v2"
-import { Redis } from "@upstash/redis"
-import { put } from "@vercel/blob"
+const crypto = require("crypto")
+const OpenAI = require("openai")
+const OAuth = require("oauth-1.0a")
+const { put } = require("@vercel/blob")
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
 
-const twitterClient = new TwitterApi({
-  appKey: process.env.X_API_KEY,
-  appSecret: process.env.X_API_SECRET,
-  accessToken: process.env.X_ACCESS_TOKEN,
-  accessSecret: process.env.X_ACCESS_SECRET,
-})
+const IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1"
+const TEXT_MODEL = process.env.OPENAI_TEXT_MODEL || "gpt-4.1-mini"
 
-const rwClient = twitterClient.readWrite
-
-const redisUrl =
-  process.env.KV_REST_API_URL ||
-  process.env.UPSTASH_REDIS_REST_URL ||
-  process.env.UPSTASH_REDIS_REST_KV_REST_API_URL
-
-const redisToken =
-  process.env.KV_REST_API_TOKEN ||
-  process.env.UPSTASH_REDIS_REST_TOKEN ||
-  process.env.UPSTASH_REDIS_REST_KV_REST_API_TOKEN
-
-const redis =
-  redisUrl && redisToken
-    ? new Redis({
-        url: redisUrl,
-        token: redisToken,
-      })
-    : null
-
-function setCors(res) {
-  res.setHeader("Access-Control-Allow-Origin", "*")
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS")
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type")
+function getSecretFromReq(req) {
+  return (
+    req.query?.secret ||
+    req.headers["x-bot-secret"] ||
+    req.body?.secret ||
+    ""
+  )
 }
 
-function getQueryValue(value) {
-  if (Array.isArray(value)) return value[0]
-  return value
+function isDryRun(req) {
+  return (
+    req.query?.dryRun === "1" ||
+    req.query?.dryRun === "true" ||
+    req.body?.dryRun === true ||
+    req.body?.dryRun === "1" ||
+    req.body?.dryRun === "true"
+  )
 }
 
-function cleanTicker(value) {
-  const cleaned =
-    String(value || "MMA")
-      .replace(/[^a-zA-Z0-9]/g, "")
-      .toUpperCase()
-      .slice(0, 10) || "MMA"
-
-  if (cleaned.length < 3) return "MMA"
-  return cleaned
+function json(res, status, data) {
+  res.status(status).setHeader("Content-Type", "application/json")
+  res.end(JSON.stringify(data))
 }
 
-function safeText(value, maxLength = 500) {
-  return String(value || "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, maxLength)
+function makeOAuth() {
+  return new OAuth({
+    consumer: {
+      key: process.env.X_API_KEY,
+      secret: process.env.X_API_SECRET,
+    },
+    signature_method: "HMAC-SHA1",
+    hash_function(baseString, key) {
+      return crypto.createHmac("sha1", key).update(baseString).digest("base64")
+    },
+  })
 }
 
-async function fetchWikipediaConcepts() {
-  const url =
-    "https://en.wikipedia.org/w/api.php?action=query&generator=random&grnnamespace=0&grnlimit=8&prop=extracts&exintro=1&explaintext=1&format=json&origin=*"
+function getOAuthHeader(url, method, token, tokenSecret, data = undefined) {
+  const oauth = makeOAuth()
+  const authData = oauth.authorize(
+    { url, method, data },
+    { key: token, secret: tokenSecret }
+  )
+  return oauth.toHeader(authData).Authorization
+}
 
-  const response = await fetch(url, {
+function normalizeTicker(value) {
+  const cleaned = String(value || "")
+    .toUpperCase()
+    .replace(/[^A-Z]/g, "")
+    .slice(0, 8)
+
+  return cleaned ? `$${cleaned}` : `$ODD`
+}
+
+async function fetchRandomWikiSummary() {
+  const res = await fetch("https://en.wikipedia.org/api/rest_v1/page/random/summary", {
     headers: {
+      "User-Agent": "Meme-Machine-Automata/1.0",
       Accept: "application/json",
-      "User-Agent": "MemeMachineAutomata/1.0",
     },
   })
 
-  if (!response.ok) {
-    throw new Error(`Wikipedia fetch failed with ${response.status}`)
+  if (!res.ok) {
+    throw new Error(`Wikipedia request failed: ${res.status}`)
   }
 
-  const data = await response.json()
-  const pagesObject = data?.query?.pages || {}
-  const pages = Object.values(pagesObject)
+  const data = await res.json()
 
-  const concepts = pages
-    .map((page) => ({
-      title: safeText(page.title, 100),
-      extract: safeText(page.extract, 500),
-    }))
-    .filter((item) => item.title)
-
-  if (!concepts.length) {
-    throw new Error("No Wikipedia concepts found.")
-  }
-
-  return concepts
-}
-
-async function getRecentTickers() {
-  if (!redis) return []
-  const items = await redis.lrange("mma:random-wiki-recent-tickers", 0, 40)
-  return Array.isArray(items) ? items : []
-}
-
-async function rememberTicker(ticker) {
-  if (!redis) return
-
-  await redis.lpush("mma:random-wiki-recent-tickers", ticker)
-  await redis.ltrim("mma:random-wiki-recent-tickers", 0, 40)
-}
-
-async function getDailyCount() {
-  if (!redis) return 0
-
-  const today = new Date().toISOString().slice(0, 10)
-  const key = `mma:random-wiki-count:${today}`
-  const count = await redis.get(key)
-
-  return Number(count || 0)
-}
-
-async function incrementDailyCount() {
-  if (!redis) return null
-
-  const today = new Date().toISOString().slice(0, 10)
-  const key = `mma:random-wiki-count:${today}`
-  const count = await redis.incr(key)
-
-  await redis.expire(key, 60 * 60 * 36)
-
-  return count
-}
-
-function extractJson(text) {
-  const raw = String(text || "").trim()
-
-  try {
-    return JSON.parse(raw)
-  } catch {
-    const match = raw.match(/\{[\s\S]*\}/)
-    if (!match) throw new Error("Text model did not return JSON.")
-    return JSON.parse(match[0])
+  return {
+    title: data.title || "",
+    extract: (data.extract || "").replace(/\s+/g, " ").trim().slice(0, 350),
   }
 }
 
-function fallbackTickerFromWikipedia(concepts) {
-  const words = concepts
-    .flatMap((item) => item.title.split(/[\s\-_:,.;/()]+/g))
-    .map((word) => word.replace(/[^a-zA-Z0-9]/g, "").toUpperCase())
-    .filter((word) => word.length >= 3 && word.length <= 10)
+async function getWikipediaSourceSet(count = 5) {
+  const items = []
+  const seen = new Set()
 
-  return words[0] || "MMA"
+  let tries = 0
+  while (items.length < count && tries < count * 4) {
+    tries++
+    try {
+      const item = await fetchRandomWikiSummary()
+      const key = (item.title || "").toLowerCase()
+      if (!key) continue
+      if (seen.has(key)) continue
+      seen.add(key)
+      items.push(item)
+    } catch (err) {
+      // keep trying
+    }
+  }
+
+  if (!items.length) {
+    throw new Error("Could not fetch random Wikipedia source material.")
+  }
+
+  return items
 }
 
-async function createSceneFromWikipedia(concepts) {
-  const recentTickers = await getRecentTickers()
-
-  const sourceMaterial = concepts
-    .map(
-      (item, index) =>
-        `${index + 1}. Title: ${item.title}\nSummary: ${item.extract || "No summary available."}`
-    )
+async function buildConceptFromWikipedia(wikiItems) {
+  const sourceText = wikiItems
+    .map((item, i) => {
+      return `${i + 1}. TITLE: ${item.title}\nSUMMARY: ${item.extract}`
+    })
     .join("\n\n")
 
-  const systemPrompt = `
-You create weird fictional character photo concepts for an autonomous meme-image bot.
+  const prompt = `
+You are creating one strange AI-image concept for an autonomous image bot.
 
-Return ONLY valid JSON.
+Use ONLY the random Wikipedia source material below as inspiration.
+Do not use any pre-made mascot list.
+Do not output multiple ideas.
 
-The image must be based on the supplied random Wikipedia article titles/summaries.
-Do not use premade characters.
-Do not use celebrities or real identifiable people.
-Do not make a collage of objects.
-Invent one central fictional character inspired by the Wikipedia material.
-The final image should be a realistic wide-angle photograph, not a cartoon.
-`
-
-  const userPrompt = `
-Random Wikipedia source material:
-
-${sourceMaterial}
-
-Recently used ticker words to avoid:
-${recentTickers.join(", ") || "none"}
-
-Create a new random image concept.
-
-Return JSON exactly like this:
+Return STRICT JSON with this shape:
 {
-  "ticker": "ONEWORD",
-  "subject": "one bizarre fictional character inspired by the Wikipedia articles",
-  "location": "one specific physical location inspired by the Wikipedia articles",
-  "action": "what the character is doing",
-  "visual_details": ["detail one", "detail two", "detail three"],
-  "camera_style": "real wide-angle lens photograph style",
-  "mood": "short mood description"
+  "ticker": "ONE UPPERCASE WORD, 3 to 8 letters, letters only",
+  "subject": "a short description of the main subject",
+  "scene": "a short description of the scene",
+  "mood": "short mood phrase",
+  "visualSeed": "a concise idea summary"
 }
 
-Rules for ticker:
-- one word only
-- 3 to 10 letters or numbers
-- no spaces
-- no dollar sign
-- not BTC, ETH, SOL, DOGE, PEPE, or MMA
-- should feel strange and memeable
-`
+Rules:
+- ticker must be a single invented or remixed uppercase word
+- no spaces in ticker
+- no dollar sign in ticker
+- make the concept bizarre, memorable, and surreal
+- include a clear SUBJECT, not just random objects
+- the subject should feel weird, unique, uncanny, and visually strong
+- do not mention brands or celebrities
+- do not mention finance promises
+- do not include offensive, hateful, or sexual content
 
-  const completion = await openai.chat.completions.create({
-    model: process.env.OPENAI_TEXT_MODEL || "gpt-4.1-mini",
+Wikipedia source material:
+${sourceText}
+`.trim()
+
+  const response = await openai.chat.completions.create({
+    model: TEXT_MODEL,
+    temperature: 1.3,
     response_format: { type: "json_object" },
     messages: [
       {
         role: "system",
-        content: systemPrompt,
+        content: "You create surreal but coherent visual concepts and output only valid JSON.",
       },
       {
         role: "user",
-        content: userPrompt,
+        content: prompt,
       },
     ],
   })
 
-  const content = completion.choices?.[0]?.message?.content
+  const raw = response.choices?.[0]?.message?.content || "{}"
+  let parsed
 
-  if (!content) {
-    throw new Error("No scene JSON returned from text model.")
+  try {
+    parsed = JSON.parse(raw)
+  } catch (err) {
+    parsed = {}
   }
 
-  const parsed = extractJson(content)
-
-  const fallbackTicker = fallbackTickerFromWikipedia(concepts)
+  const ticker = normalizeTicker(parsed.ticker)
+  const subject = String(parsed.subject || "a strange uncanny person-like figure").trim()
+  const scene = String(parsed.scene || "an ordinary place made visually surreal").trim()
+  const mood = String(parsed.mood || "uncanny deadpan surrealism").trim()
+  const visualSeed = String(parsed.visualSeed || "a strange being in a real place").trim()
 
   return {
-    ticker: cleanTicker(parsed.ticker || fallbackTicker),
-    subject: safeText(parsed.subject, 240),
-    location: safeText(parsed.location, 180),
-    action: safeText(parsed.action, 220),
-    visual_details: Array.isArray(parsed.visual_details)
-      ? parsed.visual_details.map((item) => safeText(item, 160)).slice(0, 5)
-      : [],
-    camera_style:
-      safeText(parsed.camera_style, 160) ||
-      "shot with a 20mm wide-angle lens, harsh direct flash, realistic documentary photograph",
-    mood: safeText(parsed.mood, 120),
+    ticker,
+    subject,
+    scene,
+    mood,
+    visualSeed,
+    wikiItems,
   }
 }
 
-function buildImagePrompt(scene, concepts) {
-  const sourceTitles = concepts.map((item) => item.title).join(", ")
+function buildImagePrompt(concept) {
+  const sourceTitles = concept.wikiItems.map((x) => x.title).join(", ")
 
   return `
-Create one realistic wide-angle photograph of a single bizarre fictional character.
+Create a completely original AI-generated image.
 
-The character and scene are inspired by these random Wikipedia article titles:
-${sourceTitles}
+Core concept:
+- Main subject: ${concept.subject}
+- Scene: ${concept.scene}
+- Mood: ${concept.mood}
+- Visual seed: ${concept.visualSeed}
 
-Main subject:
-${scene.subject}
+Inspiration background:
+This concept was inspired by random Wikipedia material including: ${sourceTitles}
 
-Location:
-${scene.location}
+STYLE DIRECTION:
+- Make it look like a realistic, uncanny, wide-angle photograph
+- Strong sense of a real camera being used
+- Wide-angle lens look, around 20mm to 24mm
+- Slight perspective distortion from being close to the subject
+- Realistic lighting, skin, fabric, surfaces, and environment details
+- Slightly eerie / deadpan / early-AI-photo feeling
+- Closer to a strange real photograph than an illustration
+- Not cute, not comic-book, not cartoon, not anime
+- Not glossy 3D art
+- Not a UI screenshot
+- Not a diagram
+- Not an infographic
 
-Action:
-${scene.action}
+COMPOSITION:
+- One clear central subject
+- Make the subject weird, memorable, and unique
+- The subject should feel like an odd character or being, not just scattered objects
+- Put the subject in a believable real-world environment
+- Frame it like a documentary snapshot or uncanny portrait
+- Make it visually striking and internet-weird
+- Photographic realism over stylization
 
-Visual details:
-${scene.visual_details.map((detail) => `- ${detail}`).join("\n")}
+LOOK / FEEL:
+- subtle direct flash or strong practical lighting is okay
+- slightly unsettling but still believable
+- mundane setting + bizarre subject works well
+- surreal realism
+- highly detailed
+- cinematic but natural
+- life-like
 
-Camera style:
-${scene.camera_style}
-
-Mood:
-${scene.mood}
-
-Mandatory photo requirements:
-- real wide-angle lens photograph
-- 18mm to 24mm lens feeling
-- strong wide-angle perspective distortion
-- subject clearly visible and centered
-- one main character only
-- realistic human-scale environment
-- harsh direct flash or fluorescent overhead lighting
-- realistic skin, fabric, plastic, metal, dust, grime, walls, floor, and background textures
-- imperfect documentary photo
-- awkward real camera framing
-- gritty low-budget real-world atmosphere
-- strange enough to feel like an uncanny photo found online
-
-Style:
-- photorealistic
-- realistic photograph
-- weird but believable
-- not polished
-- not cute
-- not clean corporate art
-- not fantasy concept art
-- not a digital painting
-- not cartoonish
-- not illustration
-
-Very important:
-- ONE fictional character must be the main subject
-- do not make random objects the main subject
-- do not make a collage of objects
-- do not make a cartoon
-- do not make anime
-- do not make comic-book art
-- do not make glossy 3D mascot art
-- do not make toy-like characters
-- do not make a logo
-- do not make a poster
-- do not make a chart, diagram, UI screenshot, or infographic
-- minimal or no text in the image
+STRICT RULES:
 - no readable brand logos
 - no celebrity likeness
-- no financial promises
+- no political propaganda
 - no gore
 - no explicit sexual content
+- no financial promises
+- no "buy now"
+- no "100x"
+- no guaranteed profit language
+- do not render it as a cartoon
 `.trim()
 }
 
-function buildPublicRecord({ tweetId, imageUrl, caption, scene, concepts }) {
-  return {
-    id: tweetId || `random-${Date.now()}`,
-    imageUrl,
-    prompt: caption,
-    createdAt: new Date().toISOString(),
-    source: "x-random-wikipedia-ai-scene",
-    wikiTitles: concepts.map((item) => item.title),
-    scene,
+async function generateImageBuffer(prompt) {
+  const result = await openai.images.generate({
+    model: IMAGE_MODEL,
+    prompt,
+    size: "1024x1024",
+  })
+
+  const b64 = result.data?.[0]?.b64_json
+  if (!b64) {
+    throw new Error("Image generation returned no base64 image.")
   }
+
+  return Buffer.from(b64, "base64")
 }
 
-export default async function handler(req, res) {
-  setCors(res)
-
-  if (req.method === "OPTIONS") {
-    return res.status(200).end()
+async function uploadImageToBlob(buffer, caption, prompt) {
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    return null
   }
 
-  if (req.method !== "GET") {
-    return res.status(405).json({ error: "Use GET instead." })
+  const now = Date.now()
+  const slug = caption.replace(/\$/g, "").toLowerCase() || "odd"
+
+  const blob = await put(`generations/${now}-${slug}.png`, buffer, {
+    access: "public",
+    contentType: "image/png",
+    addRandomSuffix: true,
+  })
+
+  // Optional metadata record
+  try {
+    await put(
+      `generations/${now}-${slug}.json`,
+      JSON.stringify(
+        {
+          caption,
+          prompt,
+          createdAt: new Date().toISOString(),
+          source: "x-random",
+        },
+        null,
+        2
+      ),
+      {
+        access: "public",
+        contentType: "application/json",
+        addRandomSuffix: true,
+      }
+    )
+  } catch (err) {
+    // do not fail the whole job if metadata write fails
   }
 
-  let stage = "start"
+  return blob
+}
+
+async function uploadMediaToX(imageBuffer) {
+  const url = "https://upload.twitter.com/1.1/media/upload.json"
+
+  const formData = {
+    media_data: imageBuffer.toString("base64"),
+  }
+
+  const body = new URLSearchParams(formData).toString()
+
+  const authHeader = getOAuthHeader(
+    url,
+    "POST",
+    process.env.X_ACCESS_TOKEN,
+    process.env.X_ACCESS_SECRET,
+    formData
+  )
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: authHeader,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body,
+  })
+
+  const text = await res.text()
+  let data = {}
+  try {
+    data = JSON.parse(text)
+  } catch (err) {}
+
+  if (!res.ok) {
+    throw new Error(`X media upload failed (${res.status}): ${text}`)
+  }
+
+  if (!data.media_id_string) {
+    throw new Error("X media upload did not return media_id_string.")
+  }
+
+  return data.media_id_string
+}
+
+async function postTweetToX(text, mediaId) {
+  const url = "https://api.twitter.com/2/tweets"
+
+  const payload = {
+    text,
+    media: {
+      media_ids: [mediaId],
+    },
+  }
+
+  const authHeader = getOAuthHeader(
+    url,
+    "POST",
+    process.env.X_ACCESS_TOKEN,
+    process.env.X_ACCESS_SECRET
+  )
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: authHeader,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  })
+
+  const bodyText = await res.text()
+  let data = {}
+  try {
+    data = JSON.parse(bodyText)
+  } catch (err) {}
+
+  if (!res.ok) {
+    throw new Error(`X post failed (${res.status}): ${bodyText}`)
+  }
+
+  return data?.data?.id || null
+}
+
+module.exports = async function handler(req, res) {
+  if (req.method !== "GET" && req.method !== "POST") {
+    return json(res, 405, { error: "Method not allowed." })
+  }
+
+  const providedSecret = getSecretFromReq(req)
+  if (!process.env.BOT_SECRET || providedSecret !== process.env.BOT_SECRET) {
+    return json(res, 401, { error: "Unauthorized." })
+  }
+
+  const dryRun = isDryRun(req)
 
   try {
-    const secret = getQueryValue(req.query?.secret)
-    const dryRun =
-      getQueryValue(req.query?.dryRun) === "true" ||
-      getQueryValue(req.query?.dryRun) === "1"
-    const force =
-      getQueryValue(req.query?.force) === "true" ||
-      getQueryValue(req.query?.force) === "1"
-
-    if (!secret || secret !== process.env.BOT_SECRET) {
-      return res.status(401).json({ error: "Unauthorized." })
-    }
-
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ error: "Missing OPENAI_API_KEY." })
-    }
-
-    if (!process.env.OPENAI_TEXT_MODEL) {
-      return res.status(500).json({ error: "Missing OPENAI_TEXT_MODEL." })
-    }
-
-    if (
-      !process.env.X_API_KEY ||
-      !process.env.X_API_SECRET ||
-      !process.env.X_ACCESS_TOKEN ||
-      !process.env.X_ACCESS_SECRET
-    ) {
-      return res.status(500).json({ error: "Missing X credentials." })
-    }
-
-    const dailyLimit = Number(process.env.RANDOM_DAILY_LIMIT || 8)
-
-    stage = "daily_limit"
-
-    if (!dryRun && !force) {
-      const currentCount = await getDailyCount()
-
-      if (currentCount >= dailyLimit) {
-        return res.status(200).json({
-          status: "ok",
-          skipped: "Daily random post limit reached.",
-          currentCount,
-          dailyLimit,
-        })
-      }
-    }
-
-    stage = "fetch_wikipedia"
-
-    const concepts = await fetchWikipediaConcepts()
-
-    stage = "create_scene"
-
-    let scene = await createSceneFromWikipedia(concepts)
-
-    const recentTickers = await getRecentTickers()
-    let attempts = 0
-
-    while (recentTickers.includes(scene.ticker) && attempts < 3) {
-      scene = await createSceneFromWikipedia(concepts)
-      attempts++
-    }
-
-    const caption = `$${scene.ticker}`
-    const imagePrompt = buildImagePrompt(scene, concepts)
+    const wikiItems = await getWikipediaSourceSet(5)
+    const concept = await buildConceptFromWikipedia(wikiItems)
+    const caption = concept.ticker
+    const imagePrompt = buildImagePrompt(concept)
 
     if (dryRun) {
-      return res.status(200).json({
+      return json(res, 200, {
         status: "ok",
         dryRun: true,
+        model: IMAGE_MODEL,
         caption,
-        ticker: scene.ticker,
-        wikiTitles: concepts.map((item) => item.title),
-        scene,
+        wikipediaTitles: wikiItems.map((x) => x.title),
+        concept: {
+          subject: concept.subject,
+          scene: concept.scene,
+          mood: concept.mood,
+          visualSeed: concept.visualSeed,
+        },
         imagePrompt,
-        textModel: process.env.OPENAI_TEXT_MODEL,
-        imageModel: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1",
       })
     }
 
-    stage = "generate_image"
+    const imageBuffer = await generateImageBuffer(imagePrompt)
+    const blob = await uploadImageToBlob(imageBuffer, caption, imagePrompt)
+    const mediaId = await uploadMediaToX(imageBuffer)
+    const postedTweetId = await postTweetToX(caption, mediaId)
 
-    const result = await openai.images.generate({
-      model: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1",
-      prompt: imagePrompt,
-      size: "1024x1024",
-      quality: "high",
-    })
-
-    const imageBase64 = result.data?.[0]?.b64_json
-
-    if (!imageBase64) {
-      return res.status(500).json({
-        error: "No image returned from OpenAI.",
-      })
-    }
-
-    const imageBuffer = Buffer.from(imageBase64, "base64")
-
-    stage = "save_blob"
-
-    let imageUrl = null
-
-    try {
-      const filename = `generations/random-${Date.now()}-${scene.ticker.toLowerCase()}.png`
-
-      const blob = await put(filename, imageBuffer, {
-        access: "public",
-        contentType: "image/png",
-        addRandomSuffix: true,
-      })
-
-      imageUrl = blob.url
-    } catch (blobError) {
-      console.error("Blob save failed:", blobError)
-    }
-
-    stage = "upload_media"
-
-    const mediaId = await rwClient.v1.uploadMedia(imageBuffer, {
-      mimeType: "image/png",
-    })
-
-    stage = "post_tweet"
-
-    const tweet = await rwClient.v2.tweet({
-      text: caption,
-      media: {
-        media_ids: [mediaId],
-      },
-    })
-
-    stage = "save_history"
-
-    await rememberTicker(scene.ticker)
-
-    const newCount = await incrementDailyCount()
-
-    if (redis && imageUrl) {
-      await redis.lpush(
-        "mma:recent-generations",
-        JSON.stringify(
-          buildPublicRecord({
-            tweetId: tweet?.data?.id || null,
-            imageUrl,
-            caption,
-            scene,
-            concepts,
-          })
-        )
-      )
-
-      await redis.ltrim("mma:recent-generations", 0, 9)
-    }
-
-    return res.status(200).json({
+    return json(res, 200, {
       status: "ok",
       randomMode: true,
-      postedTweetId: tweet?.data?.id || null,
+      model: IMAGE_MODEL,
       caption,
-      ticker: scene.ticker,
-      wikiTitles: concepts.map((item) => item.title),
-      scene,
-      imageUrl,
-      dailyCount: newCount,
-      dailyLimit,
-      imageStyle: "wikipedia_ai_realistic_wide_angle_character_photo",
+      postedTweetId,
+      imageUrl: blob?.url || null,
     })
-  } catch (error) {
-    console.error("x-random failed:", {
-      stage,
-      message: error?.message,
-      code: error?.code,
-      data: error?.data,
-    })
+  } catch (err) {
+    console.error("x-random error:", err)
 
-    return res.status(500).json({
-      error: "Random image bot failed.",
-      stage,
-      details: error?.message || "Unknown error",
-      code: error?.code || null,
-      data: error?.data || null,
+    return json(res, 500, {
+      error: "X random bot failed.",
+      details: err.message || "Unknown error",
     })
   }
 }
