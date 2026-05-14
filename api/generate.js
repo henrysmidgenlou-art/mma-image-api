@@ -1,246 +1,74 @@
-import crypto from "crypto"
 import OpenAI from "openai"
+import { put } from "@vercel/blob"
+import { Redis } from "@upstash/redis"
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
 
-const X_API_KEY = process.env.X_API_KEY
-const X_API_SECRET = process.env.X_API_SECRET
-const X_ACCESS_TOKEN = process.env.X_ACCESS_TOKEN
-const X_ACCESS_SECRET = process.env.X_ACCESS_SECRET
-const BOT_SECRET = process.env.BOT_SECRET || process.env.SECRET || ""
-const OPENAI_IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1"
-
-const UPSTASH_URL =
-  process.env.UPSTASH_REDIS_REST_KV_REST_API_URL ||
+const redisUrl =
+  process.env.KV_REST_API_URL ||
   process.env.UPSTASH_REDIS_REST_URL ||
-  ""
-const UPSTASH_TOKEN =
-  process.env.UPSTASH_REDIS_REST_KV_REST_API_TOKEN ||
+  process.env.UPSTASH_REDIS_REST_KV_REST_API_URL
+
+const redisToken =
+  process.env.KV_REST_API_TOKEN ||
   process.env.UPSTASH_REDIS_REST_TOKEN ||
-  ""
+  process.env.UPSTASH_REDIS_REST_KV_REST_API_TOKEN
 
-function unauthorized(res) {
-  return res.status(401).json({ error: "Unauthorized." })
+const redis =
+  redisUrl && redisToken
+    ? new Redis({
+        url: redisUrl,
+        token: redisToken,
+      })
+    : null
+
+function setCors(res) {
+  res.setHeader("Access-Control-Allow-Origin", "*")
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS, GET")
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type")
 }
 
-function checkSecret(req) {
-  const incoming =
-    req.query.secret ||
-    req.headers["x-bot-secret"] ||
-    req.headers["x-secret"] ||
-    ""
-  return BOT_SECRET && incoming === BOT_SECRET
+function looksUnsafe(prompt) {
+  const bannedWords = [
+    "nude",
+    "porn",
+    "sex",
+    "gore",
+    "kill",
+    "murder",
+    "racist",
+    "terrorist",
+  ]
+
+  const lower = String(prompt || "").toLowerCase()
+  return bannedWords.some((word) => lower.includes(word))
 }
 
-function percentEncode(str = "") {
-  return encodeURIComponent(str)
-    .replace(/[!*()']/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase())
+function cleanPublicPrompt(prompt) {
+  return String(prompt || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120)
 }
 
-function buildQueryString(params = {}) {
-  const entries = Object.entries(params).filter(
-    ([, v]) => v !== undefined && v !== null && v !== ""
-  )
-  if (!entries.length) return ""
-  return entries
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([k, v]) => `${percentEncode(k)}=${percentEncode(String(v))}`)
-    .join("&")
-}
-
-function buildOAuthHeader(method, url, queryParams = {}, bodyParams = {}) {
-  const oauth = {
-    oauth_consumer_key: X_API_KEY,
-    oauth_nonce: crypto.randomBytes(16).toString("hex"),
-    oauth_signature_method: "HMAC-SHA1",
-    oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
-    oauth_token: X_ACCESS_TOKEN,
-    oauth_version: "1.0",
-  }
-
-  const allParams = {
-    ...queryParams,
-    ...bodyParams,
-    ...oauth,
-  }
-
-  const parameterString = Object.keys(allParams)
-    .sort()
-    .map((key) => `${percentEncode(key)}=${percentEncode(String(allParams[key]))}`)
-    .join("&")
-
-  const baseString = [
-    method.toUpperCase(),
-    percentEncode(url),
-    percentEncode(parameterString),
-  ].join("&")
-
-  const signingKey = `${percentEncode(X_API_SECRET)}&${percentEncode(
-    X_ACCESS_SECRET
-  )}`
-
-  const signature = crypto
-    .createHmac("sha1", signingKey)
-    .update(baseString)
-    .digest("base64")
-
-  oauth.oauth_signature = signature
-
-  const header =
-    "OAuth " +
-    Object.keys(oauth)
-      .sort()
-      .map((key) => `${percentEncode(key)}="${percentEncode(oauth[key])}"`)
-      .join(", ")
-
-  return header
-}
-
-async function xFetch(method, url, { query = {}, form = null, json = null } = {}) {
-  const qs = buildQueryString(query)
-  const fullUrl = qs ? `${url}?${qs}` : url
-
-  let headers = {}
-  let body
-
-  if (form) {
-    headers["Authorization"] = buildOAuthHeader(method, url, query, form)
-    headers["Content-Type"] = "application/x-www-form-urlencoded"
-    body = new URLSearchParams(form).toString()
-  } else {
-    headers["Authorization"] = buildOAuthHeader(method, url, query, {})
-    if (json) {
-      headers["Content-Type"] = "application/json"
-      body = JSON.stringify(json)
-    }
-  }
-
-  const resp = await fetch(fullUrl, {
-    method,
-    headers,
-    body,
-  })
-
-  const text = await resp.text()
-  let data
-  try {
-    data = JSON.parse(text)
-  } catch {
-    data = text
-  }
-
-  if (!resp.ok) {
-    throw new Error(
-      `X request failed (${resp.status}): ${
-        typeof data === "string" ? data : JSON.stringify(data)
-      }`
-    )
-  }
-
-  return data
-}
-
-async function uploadMediaToX(base64Image) {
-  const data = await xFetch("POST", "https://upload.twitter.com/1.1/media/upload.json", {
-    form: {
-      media_data: base64Image,
-    },
-  })
-
-  if (!data.media_id_string) {
-    throw new Error("X media upload failed.")
-  }
-
-  return data.media_id_string
-}
-
-async function createTweet(statusText, mediaId) {
-  const payload = {
-    text: statusText,
-  }
-
-  if (mediaId) {
-    payload.media = {
-      media_ids: [mediaId],
-    }
-  }
-
-  const data = await xFetch("POST", "https://api.twitter.com/2/tweets", {
-    json: payload,
-  })
-
-  return data
-}
-
-async function upstashGet(key) {
-  if (!UPSTASH_URL || !UPSTASH_TOKEN) return null
-  const resp = await fetch(`${UPSTASH_URL}/get/${encodeURIComponent(key)}`, {
-    headers: {
-      Authorization: `Bearer ${UPSTASH_TOKEN}`,
-    },
-  })
-  if (!resp.ok) return null
-  const data = await resp.json()
-  return data?.result ?? null
-}
-
-async function upstashSet(key, value) {
-  if (!UPSTASH_URL || !UPSTASH_TOKEN) return null
-  await fetch(`${UPSTASH_URL}/set/${encodeURIComponent(key)}/${encodeURIComponent(value)}`, {
-    headers: {
-      Authorization: `Bearer ${UPSTASH_TOKEN}`,
-    },
-  })
-}
-
-async function getTrendingCoinGecko() {
-  const resp = await fetch("https://api.coingecko.com/api/v3/search/trending", {
-    headers: { Accept: "application/json" },
-  })
-  const data = await resp.json()
-  const coins = data?.coins || []
-
-  const mapped = coins
-    .map((entry) => entry.item)
-    .filter(Boolean)
-    .map((item) => ({
-      source: "coingecko_trending",
-      id: `cg:${item.id}`,
-      symbol: item.symbol || "",
-      name: item.name || "",
-      marketCapRank: item.market_cap_rank || null,
-    }))
-
-  return mapped
-}
-
-function pickCandidate(candidates) {
-  if (!candidates.length) return null
-  const usable = candidates.filter((c) => c.name && c.symbol)
-  if (!usable.length) return null
-  return usable[Math.floor(Math.random() * usable.length)]
-}
-
-function buildTrendPrompt(item) {
+function buildImagePrompt(prompt) {
   return `
-Create a completely original AI-generated image inspired by this trending topic:
+Create a completely original AI-generated image based on this user prompt:
 
-Name: ${item.name}
-Ticker: ${item.symbol}
+${prompt}
 
-Create one strange, unique main subject or scene as the focus of the image.
-The subject, mood, props, environment, and details should be inspired by the name and energy of the topic above.
+Let the user prompt determine the subject, setting, props, clothing, mood, and details.
 
 Visual style:
 - realistic photograph
 - wide-angle lens look
 - believable real-world lighting
-- realistic skin, fabric, metal, and surface textures
+- realistic skin, fabric, metal, plastic, and surface textures
 - subtle uncanny early-AI-image quality
 - surreal but lifelike
-- strange and memorable
+- strange and memorable when appropriate
 - not cartoon
 - not illustration
 - not anime
@@ -252,102 +80,125 @@ Visual style:
 
 Composition:
 - one strong main subject or scene
+- visually clear
 - cinematic framing
 - environmental context
-- visually clear and interesting
+- allow weirdness and unpredictability
 
-The result should feel like an unusual but believable real photograph.
+The image should feel like a bizarre but believable real photograph.
 
 Rules:
-- no readable brand logos
+- no readable logos
 - no heavy text
 - no celebrity likeness
-- no financial promises
 - no hate, gore, or explicit sexual content
+- no financial promises
 `.trim()
 }
 
-async function generateImageBase64(prompt) {
-  const result = await openai.images.generate({
-    model: OPENAI_IMAGE_MODEL,
-    prompt,
-    size: "1024x1024",
-  })
-
-  const b64 = result?.data?.[0]?.b64_json
-  if (!b64) {
-    throw new Error("No image returned from OpenAI.")
-  }
-  return b64
-}
-
-function buildTrendCaption(item) {
-  const ticker = (item.symbol || item.name || "MMA").replace(/[^A-Za-z0-9]/g, "").toUpperCase()
-  return `$${ticker}`
-}
-
 export default async function handler(req, res) {
+  setCors(res)
+
+  if (req.method === "OPTIONS") {
+    return res.status(200).end()
+  }
+
+  if (req.method === "GET") {
+    return res.status(405).json({ error: "Use POST instead." })
+  }
+
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Use POST instead." })
+  }
+
   try {
-    if (!checkSecret(req)) {
-      return unauthorized(res)
+    if (!process.env.OPENAI_API_KEY) {
+      return res.status(500).json({ error: "Missing OPENAI_API_KEY." })
     }
 
-    const dryRun =
-      req.query.dryRun === "1" ||
-      req.query.dryRun === "true" ||
-      req.query.test === "1"
+    const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body
+    const prompt = body?.prompt
 
-    const candidates = await getTrendingCoinGecko()
-    const selected = pickCandidate(candidates)
+    if (!prompt || typeof prompt !== "string") {
+      return res.status(400).json({ error: "Prompt is required." })
+    }
 
-    if (!selected) {
-      return res.status(200).json({
-        status: "ok",
-        skipped: "No clean trend candidates found.",
+    if (prompt.length > 400) {
+      return res.status(400).json({
+        error: "Prompt is too long. Keep it under 400 characters.",
       })
     }
 
-    const recentKey = `mma:x-trend:last:${selected.id}`
-    const already = await upstashGet(recentKey)
-    if (already && !dryRun) {
-      return res.status(200).json({
-        status: "ok",
-        skipped: "Recently used this trend candidate already.",
-        selected,
+    if (looksUnsafe(prompt)) {
+      return res.status(400).json({
+        error: "Try a safer prompt.",
       })
     }
 
-    const caption = buildTrendCaption(selected)
-    const imagePrompt = buildTrendPrompt(selected)
+    const finalPrompt = buildImagePrompt(prompt)
 
-    if (dryRun) {
-      return res.status(200).json({
-        status: "ok",
-        dryRun: true,
-        selected,
-        caption,
-        imagePrompt,
-        allCandidates: candidates,
-      })
+    const result = await openai.images.generate({
+      model: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1",
+      prompt: finalPrompt,
+      size: "1024x1024",
+      quality: "high",
+    })
+
+    const imageBase64 = result.data?.[0]?.b64_json
+
+    if (!imageBase64) {
+      return res.status(500).json({ error: "No image was generated." })
     }
 
-    const imageBase64 = await generateImageBase64(imagePrompt)
-    const mediaId = await uploadMediaToX(imageBase64)
-    const tweet = await createTweet(caption, mediaId)
+    const imageBuffer = Buffer.from(imageBase64, "base64")
 
-    await upstashSet(recentKey, String(Date.now()))
+    let imageUrl = null
+
+    try {
+      const filename = `generations/site-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2)}.png`
+
+      const blob = await put(filename, imageBuffer, {
+        access: "public",
+        contentType: "image/png",
+        addRandomSuffix: true,
+      })
+
+      imageUrl = blob.url
+    } catch (blobError) {
+      console.error("Blob save failed:", blobError?.message || blobError)
+    }
+
+    try {
+      if (redis && imageUrl) {
+        await redis.lpush(
+          "mma:recent-generations",
+          JSON.stringify({
+            id: `site-${Date.now()}`,
+            imageUrl,
+            prompt: cleanPublicPrompt(prompt),
+            createdAt: new Date().toISOString(),
+            source: "framer-prompt",
+          })
+        )
+
+        await redis.ltrim("mma:recent-generations", 0, 9)
+      }
+    } catch (redisError) {
+      console.error("Redis save failed:", redisError?.message || redisError)
+    }
 
     return res.status(200).json({
-      status: "ok",
-      trendMode: true,
-      selected,
-      caption,
-      postedTweetId: tweet?.data?.id || null,
+      image: `data:image/png;base64,${imageBase64}`,
+      imageUrl,
     })
   } catch (error) {
+    console.error("Image generation failed:", error)
+
     return res.status(500).json({
-      error: "x-trend failed.",
-      details: error.message || String(error),
+      error: "Image generation failed.",
+      details: error?.message || "Unknown error",
     })
   }
 }
