@@ -2,10 +2,15 @@
   "name": "mma-image-api",
   "version": "1.0.0",
   "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "vercel dev"
+  },
   "dependencies": {
-    "@upstash/redis": "latest",
-    "@vercel/blob": "latest",
     "openai": "latest",
     "twitter-api-v2": "latest"
+  },
+  "devDependencies": {
+    "vercel": "latest"
   }
 }
