@@ -1,336 +1,324 @@
+import crypto from "crypto"
 import OpenAI from "openai"
-import { TwitterApi } from "twitter-api-v2"
-import { Redis } from "@upstash/redis"
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
 
-const twitterClient = new TwitterApi({
-  appKey: process.env.X_API_KEY,
-  appSecret: process.env.X_API_SECRET,
-  accessToken: process.env.X_ACCESS_TOKEN,
-  accessSecret: process.env.X_ACCESS_SECRET,
-})
+const X_API_KEY = process.env.X_API_KEY
+const X_API_SECRET = process.env.X_API_SECRET
+const X_ACCESS_TOKEN = process.env.X_ACCESS_TOKEN
+const X_ACCESS_SECRET = process.env.X_ACCESS_SECRET
+const BOT_SECRET = process.env.BOT_SECRET || process.env.SECRET || ""
+const OPENAI_IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1"
 
-const rwClient = twitterClient.readWrite
-
-const redisUrl =
-  process.env.KV_REST_API_URL ||
+const UPSTASH_URL =
+  process.env.UPSTASH_REDIS_REST_KV_REST_API_URL ||
   process.env.UPSTASH_REDIS_REST_URL ||
-  process.env.UPSTASH_REDIS_REST_KV_REST_API_URL
-
-const redisToken =
-  process.env.KV_REST_API_TOKEN ||
+  ""
+const UPSTASH_TOKEN =
+  process.env.UPSTASH_REDIS_REST_KV_REST_API_TOKEN ||
   process.env.UPSTASH_REDIS_REST_TOKEN ||
-  process.env.UPSTASH_REDIS_REST_KV_REST_API_TOKEN
+  ""
 
-const redis = new Redis({
-  url: redisUrl,
-  token: redisToken,
-})
+function unauthorized(res) {
+  return res.status(401).json({ error: "Unauthorized." })
+}
 
-async function fetchJson(url) {
-  const response = await fetch(url, {
-    headers: {
-      Accept: "application/json",
-      "User-Agent": "MemeMachineAutomata/1.0",
+function checkSecret(req) {
+  const incoming =
+    req.query.secret ||
+    req.headers["x-bot-secret"] ||
+    req.headers["x-secret"] ||
+    ""
+  return BOT_SECRET && incoming === BOT_SECRET
+}
+
+function percentEncode(str = "") {
+  return encodeURIComponent(str)
+    .replace(/[!*()']/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase())
+}
+
+function buildQueryString(params = {}) {
+  const entries = Object.entries(params).filter(
+    ([, v]) => v !== undefined && v !== null && v !== ""
+  )
+  if (!entries.length) return ""
+  return entries
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `${percentEncode(k)}=${percentEncode(String(v))}`)
+    .join("&")
+}
+
+function buildOAuthHeader(method, url, queryParams = {}, bodyParams = {}) {
+  const oauth = {
+    oauth_consumer_key: X_API_KEY,
+    oauth_nonce: crypto.randomBytes(16).toString("hex"),
+    oauth_signature_method: "HMAC-SHA1",
+    oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
+    oauth_token: X_ACCESS_TOKEN,
+    oauth_version: "1.0",
+  }
+
+  const allParams = {
+    ...queryParams,
+    ...bodyParams,
+    ...oauth,
+  }
+
+  const parameterString = Object.keys(allParams)
+    .sort()
+    .map((key) => `${percentEncode(key)}=${percentEncode(String(allParams[key]))}`)
+    .join("&")
+
+  const baseString = [
+    method.toUpperCase(),
+    percentEncode(url),
+    percentEncode(parameterString),
+  ].join("&")
+
+  const signingKey = `${percentEncode(X_API_SECRET)}&${percentEncode(
+    X_ACCESS_SECRET
+  )}`
+
+  const signature = crypto
+    .createHmac("sha1", signingKey)
+    .update(baseString)
+    .digest("base64")
+
+  oauth.oauth_signature = signature
+
+  const header =
+    "OAuth " +
+    Object.keys(oauth)
+      .sort()
+      .map((key) => `${percentEncode(key)}="${percentEncode(oauth[key])}"`)
+      .join(", ")
+
+  return header
+}
+
+async function xFetch(method, url, { query = {}, form = null, json = null } = {}) {
+  const qs = buildQueryString(query)
+  const fullUrl = qs ? `${url}?${qs}` : url
+
+  let headers = {}
+  let body
+
+  if (form) {
+    headers["Authorization"] = buildOAuthHeader(method, url, query, form)
+    headers["Content-Type"] = "application/x-www-form-urlencoded"
+    body = new URLSearchParams(form).toString()
+  } else {
+    headers["Authorization"] = buildOAuthHeader(method, url, query, {})
+    if (json) {
+      headers["Content-Type"] = "application/json"
+      body = JSON.stringify(json)
+    }
+  }
+
+  const resp = await fetch(fullUrl, {
+    method,
+    headers,
+    body,
+  })
+
+  const text = await resp.text()
+  let data
+  try {
+    data = JSON.parse(text)
+  } catch {
+    data = text
+  }
+
+  if (!resp.ok) {
+    throw new Error(
+      `X request failed (${resp.status}): ${
+        typeof data === "string" ? data : JSON.stringify(data)
+      }`
+    )
+  }
+
+  return data
+}
+
+async function uploadMediaToX(base64Image) {
+  const data = await xFetch("POST", "https://upload.twitter.com/1.1/media/upload.json", {
+    form: {
+      media_data: base64Image,
     },
   })
 
-  if (!response.ok) {
-    throw new Error(`Fetch failed: ${url} - ${response.status}`)
+  if (!data.media_id_string) {
+    throw new Error("X media upload failed.")
   }
 
-  return response.json()
+  return data.media_id_string
 }
 
-function cleanSymbol(symbol) {
-  if (!symbol) return ""
+async function createTweet(statusText, mediaId) {
+  const payload = {
+    text: statusText,
+  }
 
-  return String(symbol)
-    .replace(/[^a-zA-Z0-9]/g, "")
-    .slice(0, 12)
-    .toUpperCase()
-}
-
-function cleanName(name) {
-  if (!name) return ""
-
-  return String(name)
-    .replace(/[^\w\s.$-]/g, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 32)
-}
-
-function isBadTopicText(text) {
-  if (!text) return false
-
-  const lower = text.toLowerCase()
-
-  const badPhrases = [
-    "http",
-    "www.",
-    "t.co",
-    "airdrop",
-    "giveaway",
-    "claim",
-    "reward",
-    "click",
-    "join",
-    "telegram",
-    "discord",
-    "wallet",
-    "connect wallet",
-    "presale",
-    "whitelist",
-    "guaranteed",
-    "100x",
-    "signal",
-    "pump signal",
-    "sovereign pillars",
-  ]
-
-  return badPhrases.some((phrase) => lower.includes(phrase))
-}
-
-function isCleanCandidate(candidate) {
-  const symbol = candidate.symbol || ""
-  const name = candidate.name || ""
-
-  if (!symbol && !name) return false
-  if (isBadTopicText(symbol) || isBadTopicText(name)) return false
-
-  if (symbol && symbol.length >= 2 && symbol.length <= 12) return true
-  if (name && name.length >= 2 && name.length <= 24) return true
-
-  return false
-}
-
-async function getTrendCandidates() {
-  const candidates = []
-
-  try {
-    const cg = await fetchJson("https://api.coingecko.com/api/v3/search/trending")
-    const coins = cg?.coins || []
-
-    for (const wrapped of coins.slice(0, 15)) {
-      const item = wrapped?.item || {}
-
-      const candidate = {
-        source: "coingecko_trending",
-        id: `cg:${item.id || item.coin_id || item.symbol || item.name}`,
-        chain: "",
-        symbol: cleanSymbol(item.symbol),
-        name: cleanName(item.name),
-      }
-
-      if (isCleanCandidate(candidate)) {
-        candidates.push(candidate)
-      }
+  if (mediaId) {
+    payload.media = {
+      media_ids: [mediaId],
     }
-  } catch (error) {
-    console.error("CoinGecko trend fetch failed:", error.message)
   }
 
-  try {
-    const boosted = await fetchJson(
-      "https://api.dexscreener.com/token-boosts/top/v1"
-    )
+  const data = await xFetch("POST", "https://api.twitter.com/2/tweets", {
+    json: payload,
+  })
 
-    if (Array.isArray(boosted)) {
-      for (const item of boosted.slice(0, 20)) {
-        const chain = item.chainId || ""
-        const tokenAddress = item.tokenAddress || ""
-
-        const rawSymbol =
-          item.symbol ||
-          item.baseToken?.symbol ||
-          item.tokenSymbol ||
-          ""
-
-        const rawName =
-          item.name ||
-          item.baseToken?.name ||
-          item.tokenName ||
-          ""
-
-        const candidate = {
-          source: "dexscreener_boosted",
-          id: `dex:${chain}:${tokenAddress || rawSymbol || rawName}`,
-          chain,
-          symbol: cleanSymbol(rawSymbol),
-          name: cleanName(rawName),
-        }
-
-        if (isCleanCandidate(candidate)) {
-          candidates.push(candidate)
-        }
-      }
-    }
-  } catch (error) {
-    console.error("DEX Screener trend fetch failed:", error.message)
-  }
-
-  return candidates
+  return data
 }
 
-function makeCaption(topic) {
-  const label = topic.symbol ? `$${topic.symbol}` : topic.name
-
-  const captions = [
-    `M.M.A. trend scan detected ${label} energy 🤖\n\nMachine-made meme. No financial advice.`,
-    `The machine found fresh meme smoke around ${label}.\n\nGenerated by Meme Machine Automata 🤖 No financial advice.`,
-    `Trend radar picked up ${label}.\n\nM.M.A. made this visual transmission. No financial advice.`,
-    `Automated meme output based on today's trend noise: ${label} 🤖\n\nNo financial advice.`,
-  ]
-
-  return captions[Math.floor(Math.random() * captions.length)].slice(0, 260)
+async function upstashGet(key) {
+  if (!UPSTASH_URL || !UPSTASH_TOKEN) return null
+  const resp = await fetch(`${UPSTASH_URL}/get/${encodeURIComponent(key)}`, {
+    headers: {
+      Authorization: `Bearer ${UPSTASH_TOKEN}`,
+    },
+  })
+  if (!resp.ok) return null
+  const data = await resp.json()
+  return data?.result ?? null
 }
 
-function makeImagePrompt(topic) {
-  const label = topic.symbol ? `$${topic.symbol}` : topic.name
+async function upstashSet(key, value) {
+  if (!UPSTASH_URL || !UPSTASH_TOKEN) return null
+  await fetch(`${UPSTASH_URL}/set/${encodeURIComponent(key)}/${encodeURIComponent(value)}`, {
+    headers: {
+      Authorization: `Bearer ${UPSTASH_TOKEN}`,
+    },
+  })
+}
 
+async function getTrendingCoinGecko() {
+  const resp = await fetch("https://api.coingecko.com/api/v3/search/trending", {
+    headers: { Accept: "application/json" },
+  })
+  const data = await resp.json()
+  const coins = data?.coins || []
+
+  const mapped = coins
+    .map((entry) => entry.item)
+    .filter(Boolean)
+    .map((item) => ({
+      source: "coingecko_trending",
+      id: `cg:${item.id}`,
+      symbol: item.symbol || "",
+      name: item.name || "",
+      marketCapRank: item.market_cap_rank || null,
+    }))
+
+  return mapped
+}
+
+function pickCandidate(candidates) {
+  if (!candidates.length) return null
+  const usable = candidates.filter((c) => c.name && c.symbol)
+  if (!usable.length) return null
+  return usable[Math.floor(Math.random() * usable.length)]
+}
+
+function buildTrendPrompt(item) {
   return `
-Create one highly realistic wide-angle photograph inspired by this trending crypto topic:
+Create a completely original AI-generated image inspired by this trending topic:
 
-${label}
+Name: ${item.name}
+Ticker: ${item.symbol}
 
-Concept:
-Turn the trend into one bizarre, lifelike, uncanny character portrait. The image should not look like a crypto chart or meme template. It should feel like a strange real photo found online: a deadpan, uncanny character in a mundane indoor place, somehow inspired by the trend topic.
+Create one strange, unique main subject or scene as the focus of the image.
+The subject, mood, props, environment, and details should be inspired by the name and energy of the topic above.
 
-Reference style direction:
-The subject should be close to the camera, centered, and slightly distorted by a very wide lens. The image should feel lifelike, awkward, eerie, documentary, and memorable.
-
-Mandatory camera requirements:
-- real wide-angle lens photograph
-- 18mm to 22mm lens feeling
-- stronger wide-angle distortion than a normal portrait
-- close camera position
-- one clear central subject
-- subject clearly visible and centered
-- large expressive face, hands, body, or object proportions from lens distortion
-- realistic human-scale environment
-- harsh direct flash or fluorescent overhead lighting
-- dim mundane background
-- believable shadows
-- realistic skin, fabric, plastic, metal, dust, grime, walls, floor, and background textures
-- imperfect documentary snapshot
-- awkward real camera framing
-- gritty low-budget real-world atmosphere
-- strange enough to feel like an uncanny photo someone accidentally found online
-
-Visual look:
-- photorealistic
-- lifelike
+Visual style:
 - realistic photograph
-- uncanny but believable
-- weird character portrait
-- mundane place plus bizarre subject
-- early AI photo-generation weirdness, but with realistic texture
-- not polished
-- not cute
-- not clean corporate art
-- not fantasy concept art
-- not a digital painting
+- wide-angle lens look
+- believable real-world lighting
+- realistic skin, fabric, metal, and surface textures
+- subtle uncanny early-AI-image quality
+- surreal but lifelike
+- strange and memorable
+- not cartoon
+- not illustration
+- not anime
+- not glossy 3D render
+- not a meme template
+- not a UI screenshot
+- not a diagram
+- not an infographic
 
-Very important:
-- one fictional character must be the main subject
-- do not make random objects the main subject
-- do not make a collage of objects
-- do not make a cartoon
-- do not make anime
-- do not make comic-book art
-- do not make glossy 3D mascot art
-- do not make toy-like characters
-- do not make a logo
-- do not make a poster
-- do not make a crypto chart
-- do not make a trading dashboard
-- do not make a chart, diagram, UI screenshot, or infographic
-- minimal or no text in the image
+Composition:
+- one strong main subject or scene
+- cinematic framing
+- environmental context
+- visually clear and interesting
+
+The result should feel like an unusual but believable real photograph.
+
+Rules:
 - no readable brand logos
+- no heavy text
 - no celebrity likeness
 - no financial promises
-- no buy now text
-- no 100x text
-- no guaranteed profit language
-- no gore
-- no explicit sexual content
+- no hate, gore, or explicit sexual content
 `.trim()
 }
 
-export default async function handler(req, res) {
-  if (req.method !== "GET") {
-    return res.status(405).json({ error: "Use GET instead." })
+async function generateImageBase64(prompt) {
+  const result = await openai.images.generate({
+    model: OPENAI_IMAGE_MODEL,
+    prompt,
+    size: "1024x1024",
+  })
+
+  const b64 = result?.data?.[0]?.b64_json
+  if (!b64) {
+    throw new Error("No image returned from OpenAI.")
   }
+  return b64
+}
 
-  let stage = "start"
+function buildTrendCaption(item) {
+  const ticker = (item.symbol || item.name || "MMA").replace(/[^A-Za-z0-9]/g, "").toUpperCase()
+  return `$${ticker}`
+}
 
+export default async function handler(req, res) {
   try {
-    const secret = req.query.secret
-
-    if (!secret || secret !== process.env.BOT_SECRET) {
-      return res.status(401).json({ error: "Unauthorized." })
+    if (!checkSecret(req)) {
+      return unauthorized(res)
     }
 
-    if (!redisUrl || !redisToken) {
-      return res.status(500).json({
-        error: "Missing Redis environment variables.",
-      })
-    }
+    const dryRun =
+      req.query.dryRun === "1" ||
+      req.query.dryRun === "true" ||
+      req.query.test === "1"
 
-    const dryRun = req.query.dryRun === "true"
+    const candidates = await getTrendingCoinGecko()
+    const selected = pickCandidate(candidates)
 
-    stage = "rate_limit"
-
-    const today = new Date().toISOString().slice(0, 10)
-    const dailyKey = `mma:trend-post-count:${today}`
-
-    const currentCount = Number((await redis.get(dailyKey)) || 0)
-
-    if (currentCount >= 3 && !dryRun) {
-      return res.status(200).json({
-        status: "ok",
-        skipped: "Daily trend post limit reached.",
-        currentCount,
-      })
-    }
-
-    stage = "get_trends"
-
-    const candidates = await getTrendCandidates()
-
-    if (!candidates.length) {
+    if (!selected) {
       return res.status(200).json({
         status: "ok",
         skipped: "No clean trend candidates found.",
       })
     }
 
-    let selected = null
-
-    for (const candidate of candidates) {
-      const postedKey = `mma:trend-posted:${candidate.id}`
-      const alreadyPosted = await redis.get(postedKey)
-
-      if (!alreadyPosted) {
-        selected = candidate
-        break
-      }
-    }
-
-    if (!selected) {
+    const recentKey = `mma:x-trend:last:${selected.id}`
+    const already = await upstashGet(recentKey)
+    if (already && !dryRun) {
       return res.status(200).json({
         status: "ok",
-        skipped: "All recent clean trend candidates were already used.",
-        checked: candidates.slice(0, 8),
+        skipped: "Recently used this trend candidate already.",
+        selected,
       })
     }
 
-    const caption = makeCaption(selected)
-    const finalPrompt = makeImagePrompt(selected)
+    const caption = buildTrendCaption(selected)
+    const imagePrompt = buildTrendPrompt(selected)
 
     if (dryRun) {
       return res.status(200).json({
@@ -338,76 +326,28 @@ export default async function handler(req, res) {
         dryRun: true,
         selected,
         caption,
-        imagePrompt: finalPrompt,
-        allCandidates: candidates.slice(0, 10),
+        imagePrompt,
+        allCandidates: candidates,
       })
     }
 
-    stage = "generate_image"
+    const imageBase64 = await generateImageBase64(imagePrompt)
+    const mediaId = await uploadMediaToX(imageBase64)
+    const tweet = await createTweet(caption, mediaId)
 
-    const imageResult = await openai.images.generate({
-      model: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1",
-      prompt: finalPrompt,
-      size: "1024x1024",
-      quality: "high",
-    })
-
-    const imageBase64 = imageResult.data?.[0]?.b64_json
-
-    if (!imageBase64) {
-      return res.status(500).json({
-        error: "No image returned from OpenAI.",
-      })
-    }
-
-    stage = "upload_media"
-
-    const imageBuffer = Buffer.from(imageBase64, "base64")
-
-    const mediaId = await rwClient.v1.uploadMedia(imageBuffer, {
-      mimeType: "image/png",
-    })
-
-    stage = "post_trend"
-
-    const posted = await rwClient.v2.tweet({
-      text: caption,
-      media: {
-        media_ids: [mediaId],
-      },
-    })
-
-    stage = "mark_posted"
-
-    await redis.set(`mma:trend-posted:${selected.id}`, "posted", {
-      ex: 60 * 60 * 24 * 14,
-    })
-
-    await redis.incr(dailyKey)
-    await redis.expire(dailyKey, 60 * 60 * 36)
+    await upstashSet(recentKey, String(Date.now()))
 
     return res.status(200).json({
       status: "ok",
       trendMode: true,
       selected,
       caption,
-      postedTweetId: posted?.data?.id || null,
-      imageStyle: "lifelike_wide_angle_uncanny_photo",
+      postedTweetId: tweet?.data?.id || null,
     })
   } catch (error) {
-    console.error("X trend bot failed:", {
-      stage,
-      message: error?.message,
-      code: error?.code,
-      data: error?.data,
-    })
-
     return res.status(500).json({
-      error: "X trend bot failed.",
-      stage,
-      details: error?.message || "Unknown error",
-      code: error?.code || null,
-      data: error?.data || null,
+      error: "x-trend failed.",
+      details: error.message || String(error),
     })
   }
 }
