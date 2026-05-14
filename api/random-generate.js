@@ -1,4 +1,9 @@
 import OpenAI from "openai";
+import { addRecentGeneration } from "./_recent-store.js";
+
+export const config = {
+  maxDuration: 60,
+};
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -143,6 +148,7 @@ async function generateImage(wiki) {
   return {
     image: `data:image/png;base64,${b64}`,
     prompt,
+    imageBytes: Buffer.from(b64, "base64").length,
   };
 }
 
@@ -155,6 +161,7 @@ export default async function handler(req, res) {
 
   if (!["GET", "POST"].includes(req.method)) {
     return res.status(405).json({
+      success: false,
       error: "Use GET or POST.",
     });
   }
@@ -162,6 +169,7 @@ export default async function handler(req, res) {
   try {
     if (!process.env.OPENAI_API_KEY) {
       return res.status(500).json({
+        success: false,
         error: "Missing OPENAI_API_KEY in Vercel.",
       });
     }
@@ -170,6 +178,21 @@ export default async function handler(req, res) {
     const ticker = makeTickerFromTitle(wiki.title);
     const generated = await generateImage(wiki);
 
+    const primaryWikiLink = {
+      title: wiki.title,
+      url: wiki.url,
+    };
+
+    const wikiLinks = [primaryWikiLink];
+
+    addRecentGeneration({
+      imageUrl: generated.image,
+      prompt: `${ticker} — ${wiki.title}`,
+      createdAt: new Date().toISOString(),
+      wikiLinks,
+      primaryWikiLink,
+    });
+
     return res.status(200).json({
       success: true,
 
@@ -177,21 +200,13 @@ export default async function handler(req, res) {
       caption: ticker,
       prompt: generated.prompt,
 
-      primaryWikiLink: {
-        title: wiki.title,
-        url: wiki.url,
-      },
-
-      wikiLinks: [
-        {
-          title: wiki.title,
-          url: wiki.url,
-        },
-      ],
+      primaryWikiLink,
+      wikiLinks,
 
       wikiTitle: wiki.title,
       wikiLink: wiki.url,
       ticker,
+      imageBytes: generated.imageBytes,
     });
   } catch (error) {
     console.error("random-generate failed:", error);
