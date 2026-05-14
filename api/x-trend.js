@@ -65,7 +65,7 @@ function cleanName(name) {
 }
 
 function isBadTopicText(text) {
-  if (!text) return true
+  if (!text) return false
 
   const lower = text.toLowerCase()
 
@@ -193,50 +193,72 @@ function makeImagePrompt(topic) {
   const label = topic.symbol ? `$${topic.symbol}` : topic.name
 
   return `
-Create an original meme-style AI image inspired by a trending crypto topic.
+Create one highly realistic wide-angle photograph inspired by this trending crypto topic:
 
-Trend topic:
 ${label}
 
-Core concept:
-A strange autonomous meme machine detects the trend topic and produces a surreal crypto-degen visual transmission.
+Concept:
+Turn the trend into one bizarre, lifelike, uncanny character portrait. The image should not look like a crypto chart or meme template. It should feel like a strange real photo found online: a deadpan, uncanny character in a mundane indoor place, somehow inspired by the trend topic.
 
-Visual style:
-- classic early AI image generation aesthetic
-- DALL-E-inspired surreal digital art look
-- dreamlike, slightly uncanny, weird but coherent
-- soft painterly lighting
-- odd object combinations
-- retro computer / AI machine energy
-- internet meme feeling, but not flat cartoon art
-- surreal, strange, memorable, and funny
-- not photorealistic
-- not anime
-- not comic-book style
-- not glossy modern 3D
-- not corporate stock image
+Reference style direction:
+The subject should be close to the camera, centered, and slightly distorted by a very wide lens. The image should feel lifelike, awkward, eerie, documentary, and memorable.
 
-Scene ideas:
-- an old computer hallucinating crypto signals
-- a surreal trader desk with strange candles and heavy bags
-- a retro AI machine printing bizarre meme imagery
-- a crypto trader trapped inside an uncanny computer-generated scene
-- green candles, red candles, heavy bags, weird monitors, glowing terminals
+Mandatory camera requirements:
+- real wide-angle lens photograph
+- 18mm to 22mm lens feeling
+- stronger wide-angle distortion than a normal portrait
+- close camera position
+- one clear central subject
+- subject clearly visible and centered
+- large expressive face, hands, body, or object proportions from lens distortion
+- realistic human-scale environment
+- harsh direct flash or fluorescent overhead lighting
+- dim mundane background
+- believable shadows
+- realistic skin, fabric, plastic, metal, dust, grime, walls, floor, and background textures
+- imperfect documentary snapshot
+- awkward real camera framing
+- gritty low-budget real-world atmosphere
+- strange enough to feel like an uncanny photo someone accidentally found online
 
-Strict rules:
-- DO NOT make a flowchart
-- DO NOT make a diagram
-- DO NOT make an infographic
-- DO NOT make a UI screenshot
-- English only
-- no real celebrity likeness
+Visual look:
+- photorealistic
+- lifelike
+- realistic photograph
+- uncanny but believable
+- weird character portrait
+- mundane place plus bizarre subject
+- early AI photo-generation weirdness, but with realistic texture
+- not polished
+- not cute
+- not clean corporate art
+- not fantasy concept art
+- not a digital painting
+
+Very important:
+- one fictional character must be the main subject
+- do not make random objects the main subject
+- do not make a collage of objects
+- do not make a cartoon
+- do not make anime
+- do not make comic-book art
+- do not make glossy 3D mascot art
+- do not make toy-like characters
+- do not make a logo
+- do not make a poster
+- do not make a crypto chart
+- do not make a trading dashboard
+- do not make a chart, diagram, UI screenshot, or infographic
+- minimal or no text in the image
 - no readable brand logos
+- no celebrity likeness
 - no financial promises
-- no "buy now"
-- no "100x"
-- no guaranteed profit
-- no investment advice
-`
+- no buy now text
+- no 100x text
+- no guaranteed profit language
+- no gore
+- no explicit sexual content
+`.trim()
 }
 
 export default async function handler(req, res) {
@@ -327,7 +349,7 @@ export default async function handler(req, res) {
       model: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1",
       prompt: finalPrompt,
       size: "1024x1024",
-      quality: "medium",
+      quality: "high",
     })
 
     const imageBase64 = imageResult.data?.[0]?.b64_json
@@ -370,7 +392,7 @@ export default async function handler(req, res) {
       selected,
       caption,
       postedTweetId: posted?.data?.id || null,
-      imageStyle: "classic_ai_surreal",
+      imageStyle: "lifelike_wide_angle_uncanny_photo",
     })
   } catch (error) {
     console.error("X trend bot failed:", {
