@@ -16,10 +16,13 @@ const redisToken =
   process.env.UPSTASH_REDIS_REST_TOKEN ||
   process.env.UPSTASH_REDIS_REST_KV_REST_API_TOKEN
 
-const redis = new Redis({
-  url: redisUrl,
-  token: redisToken,
-})
+const redis =
+  redisUrl && redisToken
+    ? new Redis({
+        url: redisUrl,
+        token: redisToken,
+      })
+    : null
 
 function setCors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*")
@@ -45,6 +48,70 @@ function looksUnsafe(prompt) {
 
 function cleanPublicPrompt(prompt) {
   return prompt.replace(/\s+/g, " ").trim().slice(0, 120)
+}
+
+function buildImagePrompt(prompt) {
+  return `
+Create one highly realistic wide-angle photograph based on this user request:
+
+${prompt}
+
+Reference style direction:
+Make it feel like a strange real photo found online: a deadpan, uncanny subject in a mundane indoor place. The subject should be close to the camera, centered, and slightly distorted by a very wide lens. The image should feel lifelike, awkward, eerie, documentary, and memorable.
+
+Mandatory camera requirements:
+- real wide-angle lens photograph
+- 18mm to 22mm lens feeling
+- stronger wide-angle distortion than a normal portrait
+- close camera position
+- one clear central subject
+- subject clearly visible and centered
+- large expressive face, hands, body, or object proportions from lens distortion
+- realistic human-scale environment
+- harsh direct flash or fluorescent overhead lighting
+- dim mundane background
+- believable shadows
+- realistic skin, fabric, plastic, metal, dust, grime, walls, floor, and background textures
+- imperfect documentary snapshot
+- awkward real camera framing
+- gritty low-budget real-world atmosphere
+- strange enough to feel like an uncanny photo someone accidentally found online
+
+Visual look:
+- photorealistic
+- lifelike
+- realistic photograph
+- uncanny but believable
+- weird character portrait or strange central subject
+- mundane place plus bizarre subject
+- early AI photo-generation weirdness, but with realistic texture
+- not polished
+- not cute
+- not clean corporate art
+- not fantasy concept art
+- not a digital painting
+
+Very important:
+- one main subject only
+- do not make random objects the main subject unless the user specifically asks for an object
+- do not make a collage of objects
+- do not make a cartoon
+- do not make anime
+- do not make comic-book art
+- do not make glossy 3D mascot art
+- do not make toy-like characters
+- do not make a logo
+- do not make a poster
+- do not make a chart, diagram, UI screenshot, or infographic
+- minimal or no text in the image
+- no readable brand logos
+- no celebrity likeness
+- no financial promises
+- no buy now text
+- no 100x text
+- no gore
+- no explicit sexual content
+`.trim()
 }
 
 export default async function handler(req, res) {
@@ -78,59 +145,13 @@ export default async function handler(req, res) {
       })
     }
 
-    const finalPrompt = `
-Create a high-quality meme-style AI image based on this user request:
-
-${prompt}
-
-Visual style:
-- classic early AI image generation aesthetic
-- DALL-E-inspired surreal digital art look
-- dreamlike, slightly uncanny, weird but coherent
-- soft painterly lighting
-- strange object combinations
-- retro AI image generator feeling
-- internet meme energy, but not flat cartoon art
-- surreal composition
-- odd, funny, memorable visual joke
-- not photorealistic
-- not anime
-- not comic-book style
-- not glossy modern 3D
-- not corporate stock image
-
-Scene direction:
-- make it feel like an early OpenAI image-generation style meme
-- strange but readable image idea
-- expressive composition
-- surreal humor
-- crypto / memecoin / internet culture vibe if relevant
-- detailed but slightly weird AI-art texture
-
-Avoid:
-- flat cartoon style
-- childish illustration
-- flowcharts
-- diagrams
-- infographics
-- UI screenshots
-- messy unreadable text
-
-Rules:
-- no hate, harassment, adult content, or graphic violence
-- no real celebrity likeness
-- no readable brand logos
-- no financial promises
-- no "buy now"
-- no "100x"
-- no guaranteed profit
-`
+    const finalPrompt = buildImagePrompt(prompt)
 
     const result = await openai.images.generate({
       model: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1",
       prompt: finalPrompt,
       size: "1024x1024",
-      quality: "medium",
+      quality: "high",
     })
 
     const imageBase64 = result.data?.[0]?.b64_json
@@ -159,7 +180,7 @@ Rules:
       createdAt: new Date().toISOString(),
     }
 
-    if (redisUrl && redisToken) {
+    if (redis) {
       await redis.lpush("mma:recent-generations", JSON.stringify(item))
       await redis.ltrim("mma:recent-generations", 0, 9)
     }
