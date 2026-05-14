@@ -4,6 +4,7 @@
   "type": "module",
   "dependencies": {
     "@upstash/redis": "latest",
+    "@vercel/blob": "latest",
     "openai": "latest",
     "twitter-api-v2": "latest"
   }
