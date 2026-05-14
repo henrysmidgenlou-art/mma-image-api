@@ -111,7 +111,6 @@ function isCleanCandidate(candidate) {
 async function getTrendCandidates() {
   const candidates = []
 
-  // 1. Prefer CoinGecko because it gives cleaner coin names/symbols.
   try {
     const cg = await fetchJson("https://api.coingecko.com/api/v3/search/trending")
     const coins = cg?.coins || []
@@ -135,7 +134,6 @@ async function getTrendCandidates() {
     console.error("CoinGecko trend fetch failed:", error.message)
   }
 
-  // 2. Fallback to DEX Screener, but only if it has clean short names/symbols.
   try {
     const boosted = await fetchJson(
       "https://api.dexscreener.com/token-boosts/top/v1"
@@ -195,28 +193,42 @@ function makeImagePrompt(topic) {
   const label = topic.symbol ? `$${topic.symbol}` : topic.name
 
   return `
-Create an original funny AI-generated meme image.
+Create an original meme-style AI image inspired by a trending crypto topic.
 
 Trend topic:
 ${label}
 
-Scene:
-A chaotic autonomous meme machine / retro AI computer has detected a trending memecoin signal. A funny robot mascot or crypto trader reacts dramatically to the trend.
+Core concept:
+A strange autonomous meme machine detects the trend topic and produces a surreal crypto-degen visual transmission.
 
-Required style:
-- English-language internet meme image
-- funny crypto-degen scene
-- retro computer / AI meme machine energy
-- robot mascot, crypto trader, green candles, red candles, heavy bags, terminal screen, or degen dashboard
-- bold, funny, high contrast composition
-- make it look like a meme scene, not a business chart
+Visual style:
+- classic early AI image generation aesthetic
+- DALL-E-inspired surreal digital art look
+- dreamlike, slightly uncanny, weird but coherent
+- soft painterly lighting
+- odd object combinations
+- retro computer / AI machine energy
+- internet meme feeling, but not flat cartoon art
+- surreal, strange, memorable, and funny
+- not photorealistic
+- not anime
+- not comic-book style
+- not glossy modern 3D
+- not corporate stock image
+
+Scene ideas:
+- an old computer hallucinating crypto signals
+- a surreal trader desk with strange candles and heavy bags
+- a retro AI machine printing bizarre meme imagery
+- a crypto trader trapped inside an uncanny computer-generated scene
+- green candles, red candles, heavy bags, weird monitors, glowing terminals
 
 Strict rules:
 - DO NOT make a flowchart
 - DO NOT make a diagram
 - DO NOT make an infographic
 - DO NOT make a UI screenshot
-- DO NOT use Chinese, Japanese, Korean, or non-English text
+- English only
 - no real celebrity likeness
 - no readable brand logos
 - no financial promises
@@ -312,10 +324,10 @@ export default async function handler(req, res) {
     stage = "generate_image"
 
     const imageResult = await openai.images.generate({
-      model: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1-mini",
+      model: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1",
       prompt: finalPrompt,
       size: "1024x1024",
-      quality: "low",
+      quality: "medium",
     })
 
     const imageBase64 = imageResult.data?.[0]?.b64_json
@@ -358,6 +370,7 @@ export default async function handler(req, res) {
       selected,
       caption,
       postedTweetId: posted?.data?.id || null,
+      imageStyle: "classic_ai_surreal",
     })
   } catch (error) {
     console.error("X trend bot failed:", {
