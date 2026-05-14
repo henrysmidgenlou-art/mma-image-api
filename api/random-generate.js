@@ -67,7 +67,7 @@ function extractJson(text) {
 
 async function fetchWikipediaConcepts() {
   const url =
-    "https://en.wikipedia.org/w/api.php?action=query&generator=random&grnnamespace=0&grnlimit=8&prop=extracts&exintro=1&explaintext=1&format=json&origin=*"
+    "https://en.wikipedia.org/w/api.php?action=query&generator=random&grnnamespace=0&grnlimit=8&prop=extracts|info&exintro=1&explaintext=1&inprop=url&format=json&origin=*"
 
   const response = await fetch(url, {
     headers: {
@@ -88,6 +88,9 @@ async function fetchWikipediaConcepts() {
     .map((page) => ({
       title: safeText(page.title, 120),
       extract: safeText(page.extract, 500),
+      url:
+        page.fullurl ||
+        (page.pageid ? `https://en.wikipedia.org/?curid=${page.pageid}` : ""),
     }))
     .filter((item) => item.title)
 
@@ -144,7 +147,8 @@ Return JSON exactly like this:
   "subject": "one strange central subject inspired by the Wikipedia articles",
   "setting": "one specific physical setting inspired by the Wikipedia articles",
   "details": ["detail one", "detail two", "detail three"],
-  "mood": "short mood description"
+  "mood": "short mood description",
+  "primarySourceTitle": "the Wikipedia title that most inspired the concept"
 }
 
 Rules for ticker:
@@ -196,6 +200,44 @@ Rules for concept:
       ? parsed.details.map((item) => safeText(item, 160)).slice(0, 5)
       : [],
     mood: safeText(parsed.mood, 120),
+    primarySourceTitle: safeText(parsed.primarySourceTitle, 120),
+  }
+}
+
+function getPrimaryWikiLink(concepts, scene) {
+  if (!concepts.length) return null
+
+  const preferredTitle = String(scene.primarySourceTitle || "").toLowerCase()
+
+  if (preferredTitle) {
+    const match = concepts.find(
+      (item) => item.title.toLowerCase() === preferredTitle
+    )
+
+    if (match?.url) {
+      return {
+        title: match.title,
+        url: match.url,
+      }
+    }
+
+    const fuzzyMatch = concepts.find((item) =>
+      item.title.toLowerCase().includes(preferredTitle)
+    )
+
+    if (fuzzyMatch?.url) {
+      return {
+        title: fuzzyMatch.title,
+        url: fuzzyMatch.url,
+      }
+    }
+  }
+
+  const firstWithUrl = concepts.find((item) => item.url) || concepts[0]
+
+  return {
+    title: firstWithUrl.title,
+    url: firstWithUrl.url,
   }
 }
 
@@ -274,6 +316,14 @@ export default async function handler(req, res) {
 
     const caption = `$${scene.ticker}`
     const imagePrompt = buildImagePrompt(scene, concepts)
+    const primaryWikiLink = getPrimaryWikiLink(concepts, scene)
+
+    const wikiLinks = concepts
+      .filter((item) => item.title && item.url)
+      .map((item) => ({
+        title: item.title,
+        url: item.url,
+      }))
 
     const result = await openai.images.generate({
       model: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1",
@@ -318,11 +368,13 @@ export default async function handler(req, res) {
           createdAt: new Date().toISOString(),
           source: "framer-random-wikipedia",
           wikiTitles: concepts.map((item) => item.title),
+          wikiLinks,
+          primaryWikiLink,
           scene,
         })
       )
 
-      await redis.ltrim("mma:recent-generations", 0, 9)
+      await redis.ltrim("mma:recent-generations", 0, 19)
     }
 
     return res.status(200).json({
@@ -331,6 +383,8 @@ export default async function handler(req, res) {
       caption,
       ticker: scene.ticker,
       wikiTitles: concepts.map((item) => item.title),
+      wikiLinks,
+      primaryWikiLink,
       scene,
     })
   } catch (error) {
