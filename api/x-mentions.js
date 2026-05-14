@@ -75,7 +75,6 @@ function looksLikeSpam(text) {
     "join the action",
     "click to start",
     "pump signal",
-    "biggest",
     "randomized",
     "wallet",
     "connect wallet",
@@ -206,27 +205,21 @@ export default async function handler(req, res) {
         continue
       }
 
-      // Must literally start with @m_m_automata
-      // This ignores spam posts that tag the bot at the end with many other accounts.
       if (!startsWithBotMention(text, botUsername)) {
         await markHandled(tweetId, "ignored_not_direct_start")
         continue
       }
 
-      // Ignore posts with too many mentions.
-      // Normal prompt should only have @m_m_automata, maybe one extra.
       if (countMentions(text) > 2) {
         await markHandled(tweetId, "ignored_too_many_mentions")
         continue
       }
 
-      // Ignore link posts.
       if (hasLink(text)) {
         await markHandled(tweetId, "ignored_contains_link")
         continue
       }
 
-      // Ignore common scam/airdrop/pump spam.
       if (looksLikeSpam(text)) {
         await markHandled(tweetId, "ignored_spam_language")
         continue
@@ -278,29 +271,56 @@ export default async function handler(req, res) {
       stage = "generate_image"
 
       const finalPrompt = `
-Create a funny AI-generated meme image.
+Create a high-quality meme-style image based on this user request:
 
-User request:
 ${prompt}
 
-Style:
-- funny internet meme
-- crypto trader / memecoin vibe
-- exaggerated cartoon expression
-- clean composition
-- visually bold and funny
+Visual style:
+- classic early AI image generation aesthetic
+- DALL-E-inspired surreal digital art look
+- dreamlike, slightly uncanny, weird but coherent
+- soft painterly lighting
+- strange object combinations
+- internet meme energy, but not flat cartoon art
+- retro AI image generator feel
+- surreal composition
+- not photorealistic
+- not anime
+- not comic-book style
+- not glossy modern 3D
+- not corporate stock image
+
+Scene direction:
+- make it feel like an odd, memorable AI-generated meme image
+- use expressive composition
+- crypto / memecoin vibe if relevant
+- strange but readable visual joke
+- atmospheric, surreal, and funny
+
+Avoid:
+- flat cartoon style
+- childish illustration
+- flowcharts
+- diagrams
+- infographics
+- UI screenshots
+- messy unreadable text
+
+Rules:
 - no hate, harassment, adult content, or graphic violence
 - no financial promises
 - no real celebrity likeness
 - no readable brand logos
-- leave room for meme-like composition if helpful
+- no "buy now"
+- no "100x"
+- no guaranteed profit
 `
 
       const imageResult = await openai.images.generate({
-        model: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1-mini",
+        model: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1",
         prompt: finalPrompt,
         size: "1024x1024",
-        quality: "low",
+        quality: "medium",
       })
 
       const imageBase64 = imageResult.data?.[0]?.b64_json
@@ -347,6 +367,7 @@ Style:
         replied: true,
         duplicateProtection: true,
         spamProtection: true,
+        imageStyle: "classic_ai_surreal",
       })
     }
 
