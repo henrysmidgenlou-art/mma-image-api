@@ -119,6 +119,70 @@ async function markHandled(tweetId, reason) {
   })
 }
 
+function buildImagePrompt(prompt) {
+  return `
+Create one highly realistic wide-angle photograph based on this user request:
+
+${prompt}
+
+Reference style direction:
+Make it feel like a strange real photo found online: a deadpan, uncanny subject in a mundane indoor place. The subject should be close to the camera, centered, and slightly distorted by a very wide lens. The image should feel lifelike, awkward, eerie, documentary, and memorable.
+
+Mandatory camera requirements:
+- real wide-angle lens photograph
+- 18mm to 22mm lens feeling
+- stronger wide-angle distortion than a normal portrait
+- close camera position
+- one clear central subject
+- subject clearly visible and centered
+- large expressive face, hands, body, or object proportions from lens distortion
+- realistic human-scale environment
+- harsh direct flash or fluorescent overhead lighting
+- dim mundane background
+- believable shadows
+- realistic skin, fabric, plastic, metal, dust, grime, walls, floor, and background textures
+- imperfect documentary snapshot
+- awkward real camera framing
+- gritty low-budget real-world atmosphere
+- strange enough to feel like an uncanny photo someone accidentally found online
+
+Visual look:
+- photorealistic
+- lifelike
+- realistic photograph
+- uncanny but believable
+- weird character portrait or strange central subject
+- mundane place plus bizarre subject
+- early AI photo-generation weirdness, but with realistic texture
+- not polished
+- not cute
+- not clean corporate art
+- not fantasy concept art
+- not a digital painting
+
+Very important:
+- one main subject only
+- do not make random objects the main subject unless the user specifically asks for an object
+- do not make a collage of objects
+- do not make a cartoon
+- do not make anime
+- do not make comic-book art
+- do not make glossy 3D mascot art
+- do not make toy-like characters
+- do not make a logo
+- do not make a poster
+- do not make a chart, diagram, UI screenshot, or infographic
+- minimal or no text in the image
+- no readable brand logos
+- no celebrity likeness
+- no financial promises
+- no buy now text
+- no 100x text
+- no gore
+- no explicit sexual content
+`.trim()
+}
+
 export default async function handler(req, res) {
   if (req.method !== "GET") {
     return res.status(405).json({ error: "Use GET instead." })
@@ -270,57 +334,13 @@ export default async function handler(req, res) {
 
       stage = "generate_image"
 
-      const finalPrompt = `
-Create a high-quality meme-style image based on this user request:
-
-${prompt}
-
-Visual style:
-- classic early AI image generation aesthetic
-- DALL-E-inspired surreal digital art look
-- dreamlike, slightly uncanny, weird but coherent
-- soft painterly lighting
-- strange object combinations
-- internet meme energy, but not flat cartoon art
-- retro AI image generator feel
-- surreal composition
-- not photorealistic
-- not anime
-- not comic-book style
-- not glossy modern 3D
-- not corporate stock image
-
-Scene direction:
-- make it feel like an odd, memorable AI-generated meme image
-- use expressive composition
-- crypto / memecoin vibe if relevant
-- strange but readable visual joke
-- atmospheric, surreal, and funny
-
-Avoid:
-- flat cartoon style
-- childish illustration
-- flowcharts
-- diagrams
-- infographics
-- UI screenshots
-- messy unreadable text
-
-Rules:
-- no hate, harassment, adult content, or graphic violence
-- no financial promises
-- no real celebrity likeness
-- no readable brand logos
-- no "buy now"
-- no "100x"
-- no guaranteed profit
-`
+      const finalPrompt = buildImagePrompt(prompt)
 
       const imageResult = await openai.images.generate({
         model: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1",
         prompt: finalPrompt,
         size: "1024x1024",
-        quality: "medium",
+        quality: "high",
       })
 
       const imageBase64 = imageResult.data?.[0]?.b64_json
@@ -367,7 +387,7 @@ Rules:
         replied: true,
         duplicateProtection: true,
         spamProtection: true,
-        imageStyle: "classic_ai_surreal",
+        imageStyle: "lifelike_wide_angle_uncanny_photo",
       })
     }
 
