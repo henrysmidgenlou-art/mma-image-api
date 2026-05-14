@@ -1,5 +1,6 @@
 import OpenAI from "openai"
 import { TwitterApi } from "twitter-api-v2"
+import { Redis } from "@upstash/redis"
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -13,6 +14,21 @@ const twitterClient = new TwitterApi({
 })
 
 const rwClient = twitterClient.readWrite
+
+const redisUrl =
+  process.env.KV_REST_API_URL ||
+  process.env.UPSTASH_REDIS_REST_URL ||
+  process.env.UPSTASH_REDIS_REST_KV_REST_API_URL
+
+const redisToken =
+  process.env.KV_REST_API_TOKEN ||
+  process.env.UPSTASH_REDIS_REST_TOKEN ||
+  process.env.UPSTASH_REDIS_REST_KV_REST_API_TOKEN
+
+const redis = new Redis({
+  url: redisUrl,
+  token: redisToken,
+})
 
 function cleanPrompt(text, botUsername) {
   if (!text) return ""
@@ -81,6 +97,18 @@ export default async function handler(req, res) {
       })
     }
 
+    if (!redisUrl) {
+      return res.status(500).json({
+        error: "Missing Redis URL.",
+      })
+    }
+
+    if (!redisToken) {
+      return res.status(500).json({
+        error: "Missing Redis token.",
+      })
+    }
+
     stage = "read_mentions"
 
     const mentionTimeline = await rwClient.v2.userMentionTimeline(botUserId, {
@@ -98,52 +126,89 @@ export default async function handler(req, res) {
       })
     }
 
-    // First test version: process only the newest mention
-    const tweet = mentions[0]
+    const checked = []
 
-    const tweetId = tweet.id
-    const authorId = tweet.author_id
-    const text = tweet.text || ""
+    for (const tweet of mentions) {
+      const tweetId = tweet.id
+      const authorId = tweet.author_id
+      const text = tweet.text || ""
 
-    if (authorId === botUserId) {
-      return res.status(200).json({
-        status: "ok",
-        skipped: "Latest mention is from the bot account.",
-        tweetId,
-      })
-    }
-
-    const prompt = cleanPrompt(text, botUsername)
-
-    if (!prompt || prompt.length < 4) {
-      return res.status(200).json({
-        status: "ok",
-        skipped: "Prompt too short.",
+      checked.push({
         tweetId,
         text,
       })
-    }
 
-    if (looksUnsafe(prompt)) {
-      stage = "send_safety_reply"
+      if (authorId === botUserId) {
+        continue
+      }
 
-      await rwClient.v2.tweet({
-        text: "I can’t generate that one. Try a safer prompt.",
-        reply: {
-          in_reply_to_tweet_id: tweetId,
-        },
+      if (!text.toLowerCase().includes(`@${botUsername.toLowerCase()}`)) {
+        continue
+      }
+
+      const repliedKey = `mma:replied:${tweetId}`
+      const lockKey = `mma:lock:${tweetId}`
+
+      stage = "check_duplicate"
+
+      const alreadyReplied = await redis.get(repliedKey)
+
+      if (alreadyReplied) {
+        continue
+      }
+
+      const gotLock = await redis.set(lockKey, Date.now().toString(), {
+        nx: true,
+        ex: 600,
       })
 
-      return res.status(200).json({
-        status: "ok",
-        replied: "Unsafe prompt warning sent.",
-        tweetId,
-      })
-    }
+      if (!gotLock) {
+        continue
+      }
 
-    stage = "generate_image"
+      const prompt = cleanPrompt(text, botUsername)
 
-    const finalPrompt = `
+      if (!prompt || prompt.length < 4) {
+        await redis.set(repliedKey, "prompt_too_short", {
+          ex: 60 * 60 * 24 * 30,
+        })
+
+        await redis.del(lockKey)
+
+        return res.status(200).json({
+          status: "ok",
+          skipped: "Prompt too short.",
+          tweetId,
+          text,
+        })
+      }
+
+      if (looksUnsafe(prompt)) {
+        stage = "send_safety_reply"
+
+        await rwClient.v2.tweet({
+          text: "I can’t generate that one. Try a safer prompt.",
+          reply: {
+            in_reply_to_tweet_id: tweetId,
+          },
+        })
+
+        await redis.set(repliedKey, "safety_reply_sent", {
+          ex: 60 * 60 * 24 * 90,
+        })
+
+        await redis.del(lockKey)
+
+        return res.status(200).json({
+          status: "ok",
+          replied: "Unsafe prompt warning sent.",
+          tweetId,
+        })
+      }
+
+      stage = "generate_image"
+
+      const finalPrompt = `
 Create a funny AI-generated meme image.
 
 User request:
@@ -161,47 +226,67 @@ Style:
 - leave room for meme-like composition if helpful
 `
 
-    const imageResult = await openai.images.generate({
-      model: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1-mini",
-      prompt: finalPrompt,
-      size: "1024x1024",
-      quality: "low",
-    })
+      const imageResult = await openai.images.generate({
+        model: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1-mini",
+        prompt: finalPrompt,
+        size: "1024x1024",
+        quality: "low",
+      })
 
-    const imageBase64 = imageResult.data?.[0]?.b64_json
+      const imageBase64 = imageResult.data?.[0]?.b64_json
 
-    if (!imageBase64) {
-      return res.status(500).json({
-        error: "No image returned from OpenAI.",
+      if (!imageBase64) {
+        await redis.del(lockKey)
+
+        return res.status(500).json({
+          error: "No image returned from OpenAI.",
+          tweetId,
+        })
+      }
+
+      stage = "upload_media"
+
+      const imageBuffer = Buffer.from(imageBase64, "base64")
+
+      const mediaId = await rwClient.v1.uploadMedia(imageBuffer, {
+        mimeType: "image/png",
+      })
+
+      stage = "post_reply"
+
+      await rwClient.v2.tweet({
+        text: "Generated by Meme Machine Automata 🤖",
+        reply: {
+          in_reply_to_tweet_id: tweetId,
+        },
+        media: {
+          media_ids: [mediaId],
+        },
+      })
+
+      stage = "mark_replied"
+
+      await redis.set(repliedKey, "replied", {
+        ex: 60 * 60 * 24 * 90,
+      })
+
+      await redis.del(lockKey)
+
+      return res.status(200).json({
+        status: "ok",
+        botUserId,
+        tweetId,
+        prompt,
+        replied: true,
+        duplicateProtection: true,
       })
     }
 
-    stage = "upload_media"
-
-    const imageBuffer = Buffer.from(imageBase64, "base64")
-
-    const mediaId = await rwClient.v1.uploadMedia(imageBuffer, {
-      mimeType: "image/png",
-    })
-
-    stage = "post_reply"
-
-    await rwClient.v2.tweet({
-      text: "Generated by Meme Machine Automata 🤖",
-      reply: {
-        in_reply_to_tweet_id: tweetId,
-      },
-      media: {
-        media_ids: [mediaId],
-      },
-    })
-
     return res.status(200).json({
       status: "ok",
+      message: "No new unprocessed direct mentions found.",
       botUserId,
-      tweetId,
-      prompt,
-      replied: true,
+      checked,
     })
   } catch (error) {
     console.error("X mention bot failed:", {
