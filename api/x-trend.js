@@ -47,6 +47,7 @@ async function fetchJson(url) {
 
 function cleanSymbol(symbol) {
   if (!symbol) return ""
+
   return String(symbol)
     .replace(/[^a-zA-Z0-9]/g, "")
     .slice(0, 12)
@@ -55,11 +56,69 @@ function cleanSymbol(symbol) {
 
 function cleanName(name) {
   if (!name) return ""
+
   return String(name)
     .replace(/[^\w\s.$-]/g, "")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 40)
+}
+
+function isBadTopicText(text) {
+  if (!text) return true
+
+  const lower = text.toLowerCase()
+
+  const badPhrases = [
+    "http",
+    "www.",
+    "t.co",
+    "airdrop",
+    "giveaway",
+    "claim",
+    "reward",
+    "click",
+    "join",
+    "telegram",
+    "discord",
+    "wallet",
+    "connect wallet",
+    "presale",
+    "whitelist",
+    "guaranteed",
+    "100x",
+    "biggest",
+    "signal",
+    "pump signal",
+  ]
+
+  return badPhrases.some((phrase) => lower.includes(phrase))
+}
+
+function isCleanCandidate(candidate) {
+  const symbol = candidate.symbol || ""
+  const name = candidate.name || ""
+  const description = candidate.description || ""
+
+  // Skip if all useful fields are empty.
+  if (!symbol && !name) return false
+
+  // Skip obvious spam/scam text.
+  if (isBadTopicText(symbol) || isBadTopicText(name) || isBadTopicText(description)) {
+    return false
+  }
+
+  // Prefer short symbols.
+  if (symbol && symbol.length >= 2 && symbol.length <= 12) {
+    return true
+  }
+
+  // Allow short clean names.
+  if (name && name.length >= 2 && name.length <= 24) {
+    return true
+  }
+
+  return false
 }
 
 async function getTrendCandidates() {
@@ -72,31 +131,39 @@ async function getTrendCandidates() {
     )
 
     if (Array.isArray(boosted)) {
-      for (const item of boosted.slice(0, 12)) {
+      for (const item of boosted.slice(0, 20)) {
         const chain = item.chainId || ""
         const tokenAddress = item.tokenAddress || ""
         const description = item.description || ""
-        const symbol =
+
+        const rawSymbol =
           item.symbol ||
           item.baseToken?.symbol ||
           item.tokenSymbol ||
           ""
 
-        const name =
+        const rawName =
           item.name ||
           item.baseToken?.name ||
           item.tokenName ||
-          description ||
-          "boosted token"
+          ""
 
-        candidates.push({
+        const cleanedSymbol = cleanSymbol(rawSymbol)
+        const cleanedName = cleanName(rawName)
+        const cleanedDescription = cleanName(description)
+
+        const candidate = {
           source: "dexscreener_boosted",
-          id: `dex:${chain}:${tokenAddress || name}`,
+          id: `dex:${chain}:${tokenAddress || cleanedSymbol || cleanedName}`,
           chain,
-          symbol: cleanSymbol(symbol),
-          name: cleanName(name),
-          description: cleanName(description),
-        })
+          symbol: cleanedSymbol,
+          name: cleanedName,
+          description: cleanedDescription,
+        }
+
+        if (isCleanCandidate(candidate)) {
+          candidates.push(candidate)
+        }
       }
     }
   } catch (error) {
@@ -109,22 +176,27 @@ async function getTrendCandidates() {
 
     const coins = cg?.coins || []
 
-    for (const wrapped of coins.slice(0, 10)) {
+    for (const wrapped of coins.slice(0, 15)) {
       const item = wrapped?.item || {}
-      candidates.push({
+
+      const candidate = {
         source: "coingecko_trending",
-        id: `cg:${item.id || item.coin_id || item.name}`,
+        id: `cg:${item.id || item.coin_id || item.symbol || item.name}`,
         chain: "",
         symbol: cleanSymbol(item.symbol),
         name: cleanName(item.name),
         description: "",
-      })
+      }
+
+      if (isCleanCandidate(candidate)) {
+        candidates.push(candidate)
+      }
     }
   } catch (error) {
     console.error("CoinGecko trend fetch failed:", error.message)
   }
 
-  return candidates.filter((item) => item.id && (item.name || item.symbol))
+  return candidates
 }
 
 function makeCaption(topic) {
@@ -142,6 +214,7 @@ function makeCaption(topic) {
 
 function makeImagePrompt(topic) {
   const label = topic.symbol ? `$${topic.symbol}` : topic.name
+
   const sourceText =
     topic.source === "dexscreener_boosted"
       ? "a boosted memecoin trend"
@@ -160,12 +233,15 @@ Visual direction:
 - retro computer / AI meme machine energy
 - funny crypto trader or robot mascot
 - exaggerated cartoon expression
-- memecoin chaos, green candles, red candles, heavy bags, terminal screen, or degen dashboard
+- memecoin chaos
+- green candles, red candles, heavy bags, terminal screen, or degen dashboard
 - original scene, not a copy of an existing meme template
 - no real celebrity likeness
 - no readable brand logos
 - no financial promises
-- no "buy now", no "100x", no guaranteed profit
+- no "buy now"
+- no "100x"
+- no guaranteed profit
 - internet meme style
 - bold, funny, high contrast composition
 `
@@ -191,8 +267,8 @@ export default async function handler(req, res) {
       })
     }
 
-    // Optional safety switch:
-    // /api/x-trend?secret=...&dryRun=true
+    // Use this to test without posting:
+    // /api/x-trend?secret=YOUR_SECRET&dryRun=true
     const dryRun = req.query.dryRun === "true"
 
     stage = "rate_limit"
@@ -218,7 +294,7 @@ export default async function handler(req, res) {
     if (!candidates.length) {
       return res.status(200).json({
         status: "ok",
-        skipped: "No trend candidates found.",
+        skipped: "No clean trend candidates found.",
       })
     }
 
@@ -237,7 +313,7 @@ export default async function handler(req, res) {
     if (!selected) {
       return res.status(200).json({
         status: "ok",
-        skipped: "All recent trend candidates were already used.",
+        skipped: "All recent clean trend candidates were already used.",
         checked: candidates.slice(0, 8),
       })
     }
@@ -252,6 +328,7 @@ export default async function handler(req, res) {
         selected,
         caption,
         imagePrompt: finalPrompt,
+        allCandidates: candidates.slice(0, 10),
       })
     }
 
