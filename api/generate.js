@@ -1,7 +1,24 @@
 import OpenAI from "openai"
+import { put } from "@vercel/blob"
+import { Redis } from "@upstash/redis"
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
+})
+
+const redisUrl =
+  process.env.KV_REST_API_URL ||
+  process.env.UPSTASH_REDIS_REST_URL ||
+  process.env.UPSTASH_REDIS_REST_KV_REST_API_URL
+
+const redisToken =
+  process.env.KV_REST_API_TOKEN ||
+  process.env.UPSTASH_REDIS_REST_TOKEN ||
+  process.env.UPSTASH_REDIS_REST_KV_REST_API_TOKEN
+
+const redis = new Redis({
+  url: redisUrl,
+  token: redisToken,
 })
 
 function setCors(res) {
@@ -24,6 +41,10 @@ function looksUnsafe(prompt) {
 
   const lower = prompt.toLowerCase()
   return bannedWords.some((word) => lower.includes(word))
+}
+
+function cleanPublicPrompt(prompt) {
+  return prompt.replace(/\s+/g, " ").trim().slice(0, 120)
 }
 
 export default async function handler(req, res) {
@@ -118,8 +139,34 @@ Rules:
       return res.status(500).json({ error: "No image was generated." })
     }
 
+    const imageBuffer = Buffer.from(imageBase64, "base64")
+
+    const filename = `generations/${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2)}.png`
+
+    const blob = await put(filename, imageBuffer, {
+      access: "public",
+      contentType: "image/png",
+    })
+
+    const imageUrl = blob.url
+
+    const item = {
+      id: filename,
+      imageUrl,
+      prompt: cleanPublicPrompt(prompt),
+      createdAt: new Date().toISOString(),
+    }
+
+    if (redisUrl && redisToken) {
+      await redis.lpush("mma:recent-generations", JSON.stringify(item))
+      await redis.ltrim("mma:recent-generations", 0, 9)
+    }
+
     return res.status(200).json({
       image: `data:image/png;base64,${imageBase64}`,
+      imageUrl,
     })
   } catch (error) {
     console.error("Image generation failed:", error)
