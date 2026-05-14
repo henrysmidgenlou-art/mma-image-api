@@ -1,364 +1,592 @@
-import { createHash } from "crypto"
-import OpenAI from "openai"
-import { TwitterApi } from "twitter-api-v2"
-import { Redis } from "@upstash/redis"
+const OpenAI = require("openai")
+const { TwitterApi } = require("twitter-api-v2")
+const { put } = require("@vercel/blob")
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
 
-const twitterClient = new TwitterApi({
-  appKey: process.env.X_API_KEY,
-  appSecret: process.env.X_API_SECRET,
-  accessToken: process.env.X_ACCESS_TOKEN,
-  accessSecret: process.env.X_ACCESS_SECRET,
-})
-
-const rwClient = twitterClient.readWrite
-
-const redisUrl =
-  process.env.KV_REST_API_URL ||
-  process.env.UPSTASH_REDIS_REST_URL ||
-  process.env.UPSTASH_REDIS_REST_KV_REST_API_URL
-
-const redisToken =
-  process.env.KV_REST_API_TOKEN ||
-  process.env.UPSTASH_REDIS_REST_TOKEN ||
-  process.env.UPSTASH_REDIS_REST_KV_REST_API_TOKEN
-
-const redis = new Redis({
-  url: redisUrl,
-  token: redisToken,
-})
-
-const RANDOM_WORDS = [
-  "frog", "wizard", "basement", "printer", "moon", "candle", "bagel",
-  "helmet", "tunnel", "glove", "banana", "television", "eyeball", "toaster",
-  "wallet", "keyboard", "satellite", "traffic cone", "elevator", "sword",
-  "cloud", "vending machine", "fish tank", "office chair", "crystal", "robot",
-  "spaceship", "briefcase", "lighthouse", "submarine", "microphone", "taxi",
-  "shoe", "ladder", "mushroom", "mirror", "pyramid", "teleporter", "fountain",
-  "goldfish", "lava lamp", "shopping cart", "mailbox", "piano", "jellyfish",
-  "desert", "neon swamp", "ancient coin", "glowing cube", "tornado", "camera",
-  "spiral staircase", "crown", "storm", "ice cream", "security camera",
-  "server room", "typewriter", "vacuum", "red balloon", "cat statue", "orb",
-  "mask", "radio", "cactus", "train", "skyscraper", "cave", "fruit bowl",
-  "wire", "drone", "statue", "moon boots", "soap bubble", "circuit board",
-  "dinosaur", "alarm clock", "library", "hammer", "suitcase", "bathtub",
-  "portal", "pigeon", "neon sign", "paperclip", "snow globe", "lantern",
-  "castle", "raincoat", "arcade machine", "telescope", "garden hose", "bell",
-  "parachute", "carousel", "torch", "strawberry", "giant key", "plasma ball",
-  "floating island", "glowing egg", "tape recorder", "vinyl record",
-  "broken monitor", "green flame", "plastic chair", "wireframe skull",
-  "shadow hand", "puddle", "giant eye", "mechanical flower", "metal bird",
-  "glass house", "rubber duck", "magnet", "anchor", "maze", "spiral sun",
-  "tiny door", "paper boat", "black cat", "silver apple", "cracked helmet",
-  "sleeping volcano", "strange tower", "golden fish", "stone face",
-  "invisible ladder", "pixel cloud", "frozen wave", "red smoke", "blue fire",
-  "glowing tunnel", "clockwork moon", "hologram", "deserted mall", "rope",
-  "soap cube", "marble head", "honey jar", "plastic fruit", "alarm siren",
-  "bat wing", "giant spoon", "wire tree", "fog machine", "museum hallway",
-  "skeleton key", "windmill", "paper mask", "sunflower", "tax form",
-  "broken elevator", "sleeping robot", "singing stone", "dancing chair",
-  "melting computer", "floating keyboard", "red candle", "green candle",
-  "terminal screen", "data cloud", "retro monitor", "basement lab",
-  "coin rain", "strange trader", "vacant office", "empty mall", "foggy hallway",
-  "echo chamber", "silver frog", "giant candle", "flying wallet", "laser eye",
-  "rusted machine", "crystal cave", "ghost printer", "neon hallway",
-  "watchtower", "paper crown", "glass pyramid", "strange river", "heavy bag",
-  "vault door", "signal tower", "wire nest", "old server", "dim attic",
-  "sunken room", "mysterious hand", "bronze statue", "fluorescent tunnel",
-  "sky whale", "machine room", "strange fruit", "paint bucket", "telephone pole",
-  "infinite staircase", "moon window", "water cube", "night garden",
-  "giant teacup", "sleeping mask", "broken arcade", "purple fog", "steel bird",
-  "lost hallway", "invisible chair", "paper moon", "plastic fish",
-  "retro computer", "glowing candle", "weird signal", "basement tunnel",
-  "floating brick", "hollow statue", "glass apple", "metal flower"
+const WORD_BANK = [
+  "coin rain",
+  "giant eye",
+  "library",
+  "heavy bag",
+  "sunken room",
+  "storm",
+  "tape recorder",
+  "moon",
+  "windmill",
+  "signal tower",
+  "neon hallway",
+  "crystal desert",
+  "candle smoke",
+  "silver fish",
+  "green candle",
+  "red candle",
+  "vault",
+  "rotating chair",
+  "telephone",
+  "ladder",
+  "subway tunnel",
+  "plastic flowers",
+  "empty theater",
+  "frozen lake",
+  "shopping cart",
+  "satellite dish",
+  "gold mask",
+  "blue fire",
+  "radio static",
+  "spiral staircase",
+  "whale shadow",
+  "desert motel",
+  "retro computer",
+  "arcade cabinet",
+  "robot hand",
+  "paper crown",
+  "mirror room",
+  "flooded office",
+  "airport runway",
+  "clock tower",
+  "orange fog",
+  "snow globe",
+  "glass pyramid",
+  "black balloon",
+  "train station",
+  "broken helmet",
+  "night market",
+  "server rack",
+  "metal stairs",
+  "cathedral ceiling",
+  "green laser",
+  "storm drain",
+  "old camera",
+  "vinyl record",
+  "flying papers",
+  "cement hallway",
+  "sunflower field",
+  "elevator",
+  "theater curtain",
+  "rose petals",
+  "white horse",
+  "stack of TVs",
+  "abandoned mall",
+  "traffic cone",
+  "copper wires",
+  "bird cage",
+  "marble statue",
+  "suitcase",
+  "smoke ring",
+  "glass cube",
+  "typewriter",
+  "doorframe",
+  "broken clock",
+  "sailboat",
+  "ice tunnel",
+  "lighthouse",
+  "empty diner",
+  "spiral notebook",
+  "shadow figure",
+  "coiled cable",
+  "hologram",
+  "church bells",
+  "gold chain",
+  "submarine window",
+  "coin tower",
+  "shopping receipt",
+  "paper airplane",
+  "basement",
+  "security monitor",
+  "warehouse",
+  "desert highway",
+  "ferris wheel",
+  "laundromat",
+  "taxi meter",
+  "rain puddle",
+  "cracked glass",
+  "parking garage",
+  "traffic light",
+  "jukebox",
+  "museum hallway",
+  "helmet visor",
+  "television glow",
+  "gumball machine",
+  "bubble wrap",
+  "microphone",
+  "roulette wheel",
+  "spiral shell",
+  "moonlight",
+  "locker room",
+  "dripping faucet",
+  "vacuum tube",
+  "compass",
+  "fire escape",
+  "stained carpet",
+  "lantern",
+  "sinking staircase",
+  "security camera",
+  "control room",
+  "coin pile",
+  "siren",
+  "trophy case",
+  "paint bucket",
+  "pay phone",
+  "blue curtain",
+  "foggy window",
+  "telescope",
+  "spiral smoke",
+  "air vent",
+  "broken mirror",
+  "ice cream truck",
+  "gas station",
+  "projector",
+  "mushroom lamp",
+  "golden ticket",
+  "slot machine",
+  "record player",
+  "glowing stairs",
+  "underground river",
+  "fountain",
+  "ceiling fan",
+  "white gloves",
+  "data cable",
+  "coin fountain",
+  "metal desk",
+  "waiting room",
+  "palm tree",
+  "observatory",
+  "streetlight",
+  "chess board",
+  "glass hallway",
+  "flashlight",
+  "curtain of rain",
+  "piano keys",
+  "torn poster",
+  "old map",
+  "frozen roses",
+  "dust cloud",
+  "wire fence",
+  "masked figure",
+  "vending machine",
+  "coin slot",
+  "mechanical heart",
+  "wristwatch",
+  "spiral tunnel",
+  "cinema screen",
+  "telephone pole",
+  "red room",
+  "green glow",
+  "marble floor",
+  "copper door",
+  "floating chair",
+  "empty pool",
+  "starlight",
+  "engine room",
+  "storm window",
+  "winding corridor",
+  "glass bottle",
+  "signal flare",
+  "raincoat",
+  "vault door",
+  "magnet",
+  "ticket booth",
+  "blue hallway",
+  "ceiling hatch",
+  "metal cage",
+  "desert wind",
+  "wooden ladder",
+  "snowstorm",
+  "terminal screen",
+  "heavy bags",
+  "market stall",
+  "dusty bookshelf",
+  "elevator light",
+  "photo booth",
+  "mysterious package",
+  "gold coin",
+  "red scarf",
+  "old television",
+  "concrete bunker",
 ]
 
-function getQueryValue(value) {
-  if (Array.isArray(value)) return value[0]
-  return value
+const RANDOM_DAILY_LIMIT = Number(process.env.RANDOM_DAILY_LIMIT || 8)
+const RANDOM_WORD_COUNT = Number(process.env.RANDOM_WORD_COUNT || 5)
+
+function getEnv(name, fallback = "") {
+  return process.env[name] || fallback
 }
 
-function shuffle(array) {
-  const arr = [...array]
+function getRedisConfig() {
+  const baseUrl =
+    getEnv("UPSTASH_REDIS_REST_KV_REST_API_URL") ||
+    getEnv("UPSTASH_REDIS_REST_URL")
 
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    const temp = arr[i]
-    arr[i] = arr[j]
-    arr[j] = temp
+  const token =
+    getEnv("UPSTASH_REDIS_REST_KV_REST_API_TOKEN") ||
+    getEnv("UPSTASH_REDIS_REST_TOKEN")
+
+  if (!baseUrl || !token) return null
+  return { baseUrl, token }
+}
+
+async function redisCommand(commandArray) {
+  const redis = getRedisConfig()
+  if (!redis) return null
+
+  const response = await fetch(redis.baseUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${redis.token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(commandArray),
+  })
+
+  if (!response.ok) {
+    throw new Error(`Redis request failed with ${response.status}`)
   }
 
-  return arr
+  const data = await response.json()
+  return data.result
 }
 
-function pickRandomItems(array, count) {
-  return shuffle(array).slice(0, count)
+function getQueryParam(req, key) {
+  if (req.query && typeof req.query[key] !== "undefined") {
+    return req.query[key]
+  }
+
+  try {
+    const url = new URL(req.url, "http://localhost")
+    return url.searchParams.get(key)
+  } catch {
+    return null
+  }
 }
 
-function hashText(text) {
-  return createHash("sha1").update(text).digest("hex")
-}
-
-function truncate(text, maxLength) {
-  if (text.length <= maxLength) return text
-  return text.slice(0, maxLength - 3) + "..."
-}
-
-function buildPrompt(words) {
-  return `
-Create a completely original surreal AI-generated image.
-
-Random inspiration words:
-${words.join(", ")}
-
-Style direction:
-- evoke the feeling of early AI image generation
-- surreal, uncanny, imaginative, dreamlike
-- visually coherent but strange
-- painterly digital image, not cartoonish
-- soft shading, slightly airbrushed textures
-- odd combinations of objects and ideas
-- minimal text
-- simple, strong composition
-- internet-weird but not childish
-- cinematic, strange, memorable
-- closer to the classic early generative image aesthetic
-- not comic-book style
-- not anime
-- not glossy mascot art
-- not a meme template
-- not a UI screenshot
-- not a diagram
-- not an infographic
-
-Image content:
-Use several of the random inspiration words to create one single strange visual scene.
-The image should feel like an unexpected artificial dream.
-
-Rules:
-- no readable brand logos
-- no real celebrity likeness
-- no financial promises
-- no buy now text
-- no 100x text
-- no guaranteed profit language
-- no hate, gore, or explicit sexual content
-`.trim()
-}
-
-function buildCaption(words) {
-  const shortWords = words.slice(0, 4).join(" / ")
-
-  return truncate(
-    `M.M.A. autonomous transmission 🧠⚡️\nSignal words: ${shortWords}\nMachine-made image. No financial advice.`,
-    280
+function toTickerWord(value) {
+  return (
+    String(value || "MMA")
+      .replace(/[^a-zA-Z0-9\s]/g, " ")
+      .trim()
+      .split(/\s+/)[0]
+      .toUpperCase() || "MMA"
   )
 }
 
+function pickRandomItems(array, count) {
+  const copy = [...array]
+
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[copy[i], copy[j]] = [copy[j], copy[i]]
+  }
+
+  return copy.slice(0, Math.min(count, copy.length))
+}
+
+function getDateKey() {
+  return new Date().toISOString().slice(0, 10)
+}
+
+async function checkDailyLimit() {
+  const redis = getRedisConfig()
+
+  if (!redis) {
+    return {
+      enabled: false,
+      allowed: true,
+      count: null,
+      limit: RANDOM_DAILY_LIMIT,
+    }
+  }
+
+  const key = `mma:x-random:count:${getDateKey()}`
+  const count = Number(await redisCommand(["INCR", key]))
+
+  if (count === 1) {
+    await redisCommand(["EXPIRE", key, 60 * 60 * 48])
+  }
+
+  return {
+    enabled: true,
+    allowed: count <= RANDOM_DAILY_LIMIT,
+    count,
+    limit: RANDOM_DAILY_LIMIT,
+  }
+}
+
+async function getRecentTickers() {
+  const redis = getRedisConfig()
+  if (!redis) return []
+
+  const result = await redisCommand(["LRANGE", "mma:x-random:recent_tickers", 0, 24])
+  return Array.isArray(result) ? result : []
+}
+
+async function rememberTicker(ticker) {
+  const redis = getRedisConfig()
+  if (!redis) return
+
+  await redisCommand(["LPUSH", "mma:x-random:recent_tickers", ticker])
+  await redisCommand(["LTRIM", "mma:x-random:recent_tickers", 0, 24])
+}
+
+async function rememberGenerationRecord(record) {
+  const redis = getRedisConfig()
+  if (!redis) return
+
+  await redisCommand(["LPUSH", "mma:recent_generations", JSON.stringify(record)])
+  await redisCommand(["LTRIM", "mma:recent_generations", 0, 49])
+}
+
+function buildSelection() {
+  return pickRandomItems(WORD_BANK, RANDOM_WORD_COUNT)
+}
+
+function buildImagePrompt(selectedWords) {
+  return `
+Create a completely original AI-generated image.
+
+Random inspiration words:
+${selectedWords.join(", ")}
+
+Main goal:
+Create a highly realistic, visually striking image that feels like a strange but believable real photograph.
+
+Important style direction:
+- photorealistic
+- cinematic but natural
+- realistic lighting
+- realistic materials and textures
+- soft, believable shadows
+- subtle film-like feel
+- strange subject matter, but rendered as if it were a real photograph
+- polished, memorable, atmospheric
+- closer to classic early AI photo-generation aesthetics than cartoon art
+- not cartoony
+- not comic-book style
+- not mascot art
+- not glossy illustration
+- not a meme template
+- not a UI screenshot
+- not a flowchart
+- not a diagram
+- not an infographic
+
+Composition:
+Use only 2 to 4 of the random inspiration words to create one single coherent scene.
+Do NOT try to force every word into the image.
+The final image should feel like an unusual real-world photograph, not a collage.
+
+Visual feel:
+- realistic photography
+- cinematic framing
+- authentic depth
+- believable perspective
+- subtle surrealism
+- unexpected but elegant
+- internet-weird in concept, realistic in execution
+
+Strict rules:
+- no readable brand logos
+- no celebrity likeness
+- no financial promises
+- no "buy now" text
+- no "100x" text
+- no guaranteed profit language
+- no hate, gore, or explicit sexual content
+- minimal or no text in the image
+`.trim()
+}
+
 async function generateImageBuffer(prompt) {
+  const model = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1"
+
   const result = await openai.images.generate({
-    model: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1",
+    model,
     prompt,
-    size: process.env.OPENAI_IMAGE_SIZE || "1024x1024",
-    quality: "medium",
+    size: "1024x1024",
   })
 
-  const imageBase64 = result.data?.[0]?.b64_json
+  const item = result?.data?.[0]
 
-  if (!imageBase64) {
-    throw new Error("No image returned from OpenAI.")
+  if (!item) {
+    throw new Error("No image was returned by OpenAI.")
   }
 
-  return Buffer.from(imageBase64, "base64")
-}
-
-async function getDailyCount() {
-  const today = new Date().toISOString().slice(0, 10)
-  const dailyKey = `mma:random:count:${today}`
-  const count = await redis.get(dailyKey)
-
-  return Number(count || 0)
-}
-
-async function incrementDailyCount() {
-  const today = new Date().toISOString().slice(0, 10)
-  const dailyKey = `mma:random:count:${today}`
-
-  const count = await redis.incr(dailyKey)
-  await redis.expire(dailyKey, 60 * 60 * 24 * 3)
-
-  return count
-}
-
-async function getUniqueWordSet(force = false) {
-  for (let i = 0; i < 8; i++) {
-    const count = 10 + Math.floor(Math.random() * 3)
-    const words = pickRandomItems(RANDOM_WORDS, count)
-    const signature = words.slice().sort().join("|")
-    const signatureHash = hashText(signature)
-    const dupKey = `mma:random:dup:${signatureHash}`
-
-    if (force) {
-      return { words, signatureHash, dupKey }
-    }
-
-    const exists = await redis.get(dupKey)
-
-    if (!exists) {
-      return { words, signatureHash, dupKey }
+  if (item.b64_json) {
+    return {
+      buffer: Buffer.from(item.b64_json, "base64"),
+      model,
     }
   }
 
-  return null
+  if (item.url) {
+    const imageResponse = await fetch(item.url)
+    if (!imageResponse.ok) {
+      throw new Error(`Failed to download generated image (${imageResponse.status})`)
+    }
+
+    const arrayBuffer = await imageResponse.arrayBuffer()
+    return {
+      buffer: Buffer.from(arrayBuffer),
+      model,
+    }
+  }
+
+  throw new Error("OpenAI returned an unsupported image response.")
 }
 
-export default async function handler(req, res) {
-  let stage = "start"
+function createTwitterClient() {
+  return new TwitterApi({
+    appKey: process.env.X_API_KEY,
+    appSecret: process.env.X_API_SECRET,
+    accessToken: process.env.X_ACCESS_TOKEN,
+    accessSecret: process.env.X_ACCESS_SECRET,
+  })
+}
+
+function requireEnvVars() {
+  const required = [
+    "OPENAI_API_KEY",
+    "X_API_KEY",
+    "X_API_SECRET",
+    "X_ACCESS_TOKEN",
+    "X_ACCESS_SECRET",
+    "BOT_SECRET",
+  ]
+
+  const missing = required.filter((name) => !process.env[name])
+
+  if (missing.length) {
+    throw new Error(`Missing environment variables: ${missing.join(", ")}`)
+  }
+}
+
+module.exports = async function handler(req, res) {
+  if (req.method !== "GET") {
+    return res.status(405).json({ error: "Method not allowed. Use GET." })
+  }
 
   try {
-    if (req.method !== "GET" && req.method !== "POST") {
-      return res.status(405).json({ error: "Use GET or POST." })
-    }
+    requireEnvVars()
 
-    const secret = getQueryValue(req.query?.secret)
-    const dryRun =
-      getQueryValue(req.query?.dryRun) === "1" ||
-      getQueryValue(req.query?.dryRun) === "true"
-    const force =
-      getQueryValue(req.query?.force) === "1" ||
-      getQueryValue(req.query?.force) === "true"
+    const secret = getQueryParam(req, "secret")
+    const dryRun = String(getQueryParam(req, "dryRun") || "").toLowerCase() === "true"
 
     if (!secret || secret !== process.env.BOT_SECRET) {
       return res.status(401).json({ error: "Unauthorized." })
     }
 
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ error: "Missing OPENAI_API_KEY." })
-    }
+    const recentTickers = await getRecentTickers()
 
-    if (
-      !process.env.X_API_KEY ||
-      !process.env.X_API_SECRET ||
-      !process.env.X_ACCESS_TOKEN ||
-      !process.env.X_ACCESS_SECRET
-    ) {
-      return res.status(500).json({ error: "Missing X API credentials." })
-    }
+    let selectedWords = []
+    let captionWord = "MMA"
 
-    if (!redisUrl || !redisToken) {
-      return res.status(500).json({ error: "Missing Redis credentials." })
-    }
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const candidateWords = buildSelection()
+      const possibleTicker = toTickerWord(
+        candidateWords[Math.floor(Math.random() * candidateWords.length)]
+      )
 
-    const dailyLimit = Number(process.env.RANDOM_DAILY_LIMIT || 8)
-
-    stage = "daily_limit"
-
-    if (!dryRun && !force) {
-      const currentCount = await getDailyCount()
-
-      if (currentCount >= dailyLimit) {
-        return res.status(200).json({
-          status: "ok",
-          skipped: `Daily random post limit reached (${dailyLimit}).`,
-          currentCount,
-          dailyLimit,
-        })
+      if (!recentTickers.includes(possibleTicker)) {
+        selectedWords = candidateWords
+        captionWord = possibleTicker
+        break
       }
     }
 
-    stage = "pick_words"
-
-    const uniqueSet = await getUniqueWordSet(force)
-
-    if (!uniqueSet) {
-      return res.status(200).json({
-        status: "ok",
-        skipped: "Could not find a fresh random word combination.",
-      })
+    if (!selectedWords.length) {
+      selectedWords = buildSelection()
+      captionWord = toTickerWord(selectedWords[0] || "MMA")
     }
 
-    const { words, dupKey } = uniqueSet
-    const prompt = buildPrompt(words)
-    const caption = buildCaption(words)
+    const caption = `$${captionWord}`
+    const imagePrompt = buildImagePrompt(selectedWords)
 
     if (dryRun) {
       return res.status(200).json({
         status: "ok",
         dryRun: true,
         model: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1",
-        selectedWords: words,
+        selectedWords,
         caption,
-        imagePrompt: prompt,
+        imagePrompt,
       })
     }
 
-    stage = "generate_image"
+    const limitCheck = await checkDailyLimit()
 
-    const imageBuffer = await generateImageBuffer(prompt)
+    if (!limitCheck.allowed) {
+      return res.status(200).json({
+        status: "ok",
+        skipped: `Daily random limit reached (${limitCheck.limit}/day).`,
+        limitEnabled: limitCheck.enabled,
+        count: limitCheck.count,
+        limit: limitCheck.limit,
+      })
+    }
 
-    stage = "upload_media"
+    const { buffer, model } = await generateImageBuffer(imagePrompt)
 
-    const mediaId = await rwClient.v1.uploadMedia(imageBuffer, {
+    let imageUrl = null
+    try {
+      const filename = `generations/${Date.now()}-${captionWord.toLowerCase()}.png`
+      const blob = await put(filename, buffer, {
+        access: "public",
+        contentType: "image/png",
+        addRandomSuffix: true,
+      })
+      imageUrl = blob.url
+    } catch (blobError) {
+      console.error("Blob upload error:", blobError)
+    }
+
+    const twitterClient = createTwitterClient()
+    const mediaId = await twitterClient.v1.uploadMedia(buffer, {
       mimeType: "image/png",
     })
 
-    stage = "post_tweet"
-
-    const tweet = await rwClient.v2.tweet({
+    const tweet = await twitterClient.v2.tweet({
       text: caption,
       media: {
         media_ids: [mediaId],
       },
     })
 
-    stage = "save_history"
+    await rememberTicker(captionWord)
 
-    await redis.set(dupKey, "1", {
-      ex: 60 * 60 * 24 * 30,
-    })
-
-    const newCount = await incrementDailyCount()
-
-    const historyItem = {
-      tweetId: tweet?.data?.id || null,
-      caption,
-      prompt,
-      selectedWords: words,
+    await rememberGenerationRecord({
+      id: tweet?.data?.id || `random-${Date.now()}`,
+      imageUrl,
+      prompt: imagePrompt,
       createdAt: new Date().toISOString(),
-      mode: "random",
-    }
-
-    await redis.lpush("mma:random:history", JSON.stringify(historyItem))
-    await redis.ltrim("mma:random:history", 0, 49)
+      source: "x-random",
+      caption,
+      selectedWords,
+      model,
+    })
 
     return res.status(200).json({
       status: "ok",
       randomMode: true,
-      postedTweetId: tweet?.data?.id || null,
-      selectedWords: words,
+      model,
+      selectedWords,
       caption,
-      dailyCount: newCount,
-      dailyLimit,
+      postedTweetId: tweet?.data?.id || null,
+      imageUrl,
       duplicateProtection: true,
-      imageStyle: "classic_ai_surreal_random",
+      dailyLimit: {
+        enabled: limitCheck.enabled,
+        count: limitCheck.count,
+        limit: limitCheck.limit,
+      },
     })
   } catch (error) {
-    console.error("x-random error:", {
-      stage,
-      message: error?.message,
-      code: error?.code,
-      data: error?.data,
-    })
+    console.error("x-random error:", error)
 
     return res.status(500).json({
-      error: "Random post bot failed.",
-      stage,
-      details: error?.message || "Unknown error",
-      code: error?.code || null,
-      data: error?.data || null,
+      error: "Random image bot failed.",
+      details: error.message || "Unknown error",
     })
   }
 }
