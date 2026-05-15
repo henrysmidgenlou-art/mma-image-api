@@ -4,7 +4,9 @@ const OpenAI = OpenAIModule.default || OpenAIModule
 const DEFAULT_IMAGE_MODEL = "gpt-image-1"
 const DEFAULT_IMAGE_SIZE = "1536x1024"
 const DEFAULT_IMAGE_QUALITY = "medium"
+
 const RECENT_KEY = "ramon:recent-generations"
+const RECENT_BLOB_PATH = "ramon/recent-generations.json"
 
 function pick(arr) {
     return arr[Math.floor(Math.random() * arr.length)]
@@ -114,6 +116,8 @@ function inferWikiProfile(page) {
             "screenwriter",
             "filmmaker",
             "dancer",
+            "rapper",
+            "performer",
         ]),
         isAnimal: hasAny([
             "animal",
@@ -311,10 +315,12 @@ function extractWikiAnchors(page) {
                     "several",
                     "became",
                     "called",
+                    "american",
+                    "british",
                 ].includes(word.toLowerCase())
         )
 
-    const unique = [...new Set(words)].slice(0, 16)
+    const unique = [...new Set(words)].slice(0, 18)
 
     return unique.length ? unique.join(", ") : title
 }
@@ -323,35 +329,35 @@ const FORM_MODES = [
     {
         name: "Person-First Publicity Photo",
         characterAllowed: true,
-        weightForPeople: 16,
+        weightForPeople: 18,
         description:
             "keep the source as a fictionalized person-first image inspired by the person's role, career, era, wardrobe, posture, and public context",
     },
     {
         name: "Human Portrait / Meme Photo",
         characterAllowed: true,
-        weightForPeople: 12,
+        weightForPeople: 14,
         description:
             "make a strange fictional human portrait inspired by the source, meme-like but still connected to the person's biography",
     },
     {
         name: "Movie Still / Public Figure Scene",
         characterAllowed: true,
-        weightForPeople: 10,
+        weightForPeople: 12,
         description:
             "make a fictional alternate-universe movie still, publicity photo, award-photo, sports portrait, TV still, or magazine image connected to the person",
     },
     {
         name: "Toy / Action Figure / Wax Figure",
         characterAllowed: true,
-        weightForPeople: 6,
+        weightForPeople: 8,
         description:
             "make the person source into a toy-like figure, wax figure, action figure, puppet, boxed figure, or catalog character",
     },
     {
         name: "Mascot / Costume / Performer",
         characterAllowed: true,
-        weightForPeople: 3,
+        weightForPeople: 4,
         description:
             "make a costumed performer or staged character inspired by the source, but keep it connected to the person's role and avoid unrelated animal transformations",
     },
@@ -416,6 +422,16 @@ const PERSON_SAFE_ARCHETYPE_NAMES = [
     "Appliance-Head Person",
     "Rubber Suit Movie Extra",
     "Mall Portrait Alien Relative",
+    "Red Carpet Doppelganger",
+    "Cursed Yearbook Celebrity",
+    "Movie Stunt Double",
+    "Fitness Tape Instructor",
+    "Infomercial Host",
+    "Wax Action Hero",
+    "Tiny Celebrity Roommate",
+    "Parade Float Public Figure",
+    "Airport Paparazzi Figure",
+    "Department Store Mannequin Celebrity",
 ]
 
 const ANIMAL_ARCHETYPE_NAMES = [
@@ -539,6 +555,76 @@ const CHARACTER_ARCHETYPES = [
         avoid: "no horror monster posture",
     },
     {
+        name: "Red Carpet Doppelganger",
+        body: "fictional red-carpet celebrity stand-in, formalwear, awkward pose, flash-photo posture",
+        face: "human face with exaggerated confidence, not the real person's exact face",
+        mood: "celebrity event photo from another universe, glossy flash, strange glamour",
+        avoid: "no animal transformation, no mascot head, no logos",
+    },
+    {
+        name: "Cursed Yearbook Celebrity",
+        body: "fictional public figure posed like a school yearbook or awkward portrait day photo",
+        face: "stiff smile, over-lit face, strange but human",
+        mood: "awkward portrait studio, funny and uncomfortable",
+        avoid: "no monster features, no pet features",
+    },
+    {
+        name: "Movie Stunt Double",
+        body: "fictional stunt double dressed for a strange action scene, dynamic pose, practical outfit",
+        face: "human stunt-performer face partly obscured by lighting or motion",
+        mood: "behind-the-scenes movie still, physical, funny, action-oriented",
+        avoid: "no dog, no unrelated creature",
+    },
+    {
+        name: "Fitness Tape Instructor",
+        body: "fictional exercise video instructor, awkward athletic pose, vintage workout outfit",
+        face: "overly enthusiastic human expression, strange but person-first",
+        mood: "1980s or 1990s exercise tape still, bright studio, ridiculous confidence",
+        avoid: "no animal body, no monster mask",
+    },
+    {
+        name: "Infomercial Host",
+        body: "fictional TV salesperson demonstrating a source-related prop",
+        face: "huge smile or deadpan stare, human, not exact likeness",
+        mood: "late-night commercial, cheap set, intense product-demo energy",
+        avoid: "no creature replacement, no random pet",
+    },
+    {
+        name: "Wax Action Hero",
+        body: "wax museum action-hero figure in a dramatic movie pose",
+        face: "stiff waxy celebrity-like human face, off-model and uncanny",
+        mood: "museum display meets action movie publicity photo",
+        avoid: "no exact celebrity likeness, no animal face",
+    },
+    {
+        name: "Tiny Celebrity Roommate",
+        body: "small fictional public figure stand-in living in an ordinary room, table, bed, or shelf",
+        face: "tiny human-like face or toy-like face, source-inspired, not exact likeness",
+        mood: "domestic snapshot, funny, discovered accidentally",
+        avoid: "no pet transformation unless the source is an animal",
+    },
+    {
+        name: "Parade Float Public Figure",
+        body: "bulky papier-mâché public-figure costume or parade-float style body",
+        face: "painted handmade human-like face, uneven craft texture, source-specific shape",
+        mood: "local parade photo, homemade, bright, silly, public event",
+        avoid: "no sleek plastic toy finish, no animal body",
+    },
+    {
+        name: "Airport Paparazzi Figure",
+        body: "fictional public figure caught in an airport or hallway, awkward candid pose",
+        face: "human face partly obscured by flash, sunglasses, blur, or angle",
+        mood: "paparazzi snapshot, strange ordinary realism",
+        avoid: "no monster body, no pet body",
+    },
+    {
+        name: "Department Store Mannequin Celebrity",
+        body: "department-store mannequin arranged like a famous public figure or performer",
+        face: "smooth mannequin face with source-inspired styling, not a real likeness",
+        mood: "store display photo, glossy, unsettling but person-first",
+        avoid: "no animal transformation, no creature anatomy",
+    },
+    {
         name: "Glossy Helmet Puppet",
         body: "smooth synthetic puppet body with a helmet-shaped head and epoxy-like surface",
         face: "small glassy eyes, tiny mouth, shiny acrylic facial planes",
@@ -624,6 +710,12 @@ const STYLE_WORLDS = [
     "toy store display photo",
     "paparazzi photo from a strange event",
     "movie poster behind-the-scenes still",
+    "old television commercial still",
+    "red carpet photo with no logos",
+    "airport paparazzi snapshot",
+    "department store display photograph",
+    "exercise tape still frame",
+    "late-night infomercial photograph",
 ]
 
 const CAMERA_ANGLES = [
@@ -656,6 +748,9 @@ const CAMERA_ANGLES = [
     "three-quarter portrait with awkward flash",
     "red-carpet step-and-repeat angle without readable logos",
     "paparazzi telephoto crop",
+    "airport hallway candid angle",
+    "old TV camera angle",
+    "toy packaging product angle",
 ]
 
 const LIGHTING_STYLES = [
@@ -687,6 +782,9 @@ const LIGHTING_STYLES = [
     "school gymnasium lighting",
     "strip-mall storefront lighting",
     "Hollywood press-photo flash",
+    "airport fluorescent ceiling lights",
+    "late-night TV studio lighting",
+    "store-window display lighting",
 ]
 
 const COLOR_MOODS = [
@@ -715,6 +813,9 @@ const COLOR_MOODS = [
     "faded family-album colors",
     "loud parade-float colors",
     "glossy celebrity-magazine colors",
+    "flashy red-carpet black and gold",
+    "department-store mannequin colors",
+    "1980s workout tape colors",
 ]
 
 const MATERIALS = [
@@ -742,6 +843,9 @@ const MATERIALS = [
     "appliance plastic and chrome",
     "cheap formalwear fabric",
     "movie costume leather and nylon",
+    "department-store mannequin plastic",
+    "synthetic celebrity wig hair",
+    "toy blister-pack reflections",
 ]
 
 const WARDROBE_DETAILS = [
@@ -767,6 +871,10 @@ const WARDROBE_DETAILS = [
     "action-movie jacket",
     "red-carpet formalwear with no readable logos",
     "wax museum display clothing",
+    "department store mannequin outfit",
+    "1980s workout clothes",
+    "airport travel jacket",
+    "toy action-figure outfit",
 ]
 
 const POSE_DIRECTIONS = [
@@ -790,6 +898,9 @@ const POSE_DIRECTIONS = [
     "posing like a movie publicity still",
     "standing like an award-show photo without copying any real event",
     "crouching like an action hero in a very awkward way",
+    "walking through an airport hallway",
+    "standing in a store display window",
+    "demonstrating a strange source-related product",
 ]
 
 const SOURCE_TRANSFORMERS = [
@@ -803,6 +914,23 @@ const SOURCE_TRANSFORMERS = [
     "avoid generic weirdness; every odd detail should connect to the source",
     "use the Wikipedia source image as a loose color, pose, or object reference without copying it",
     "make the background logically connect to the source topic",
+    "make the prop choice come directly from the source summary",
+    "make the outfit or setting reflect the source person's profession or public role",
+]
+
+const PERSON_TWIST_MODES = [
+    "fictional wax museum version",
+    "fictional toy-commercial version",
+    "fictional paparazzi version",
+    "fictional movie still version",
+    "fictional old magazine ad version",
+    "fictional public-access TV version",
+    "fictional action figure version",
+    "fictional red-carpet version",
+    "fictional department-store mannequin version",
+    "fictional exercise tape version",
+    "fictional infomercial host version",
+    "fictional airport candid version",
 ]
 
 function weightedPick(items, weightKey = "weightForPeople") {
@@ -903,7 +1031,9 @@ function buildStyleMix(page) {
         materials: pickMany(MATERIALS, 3),
         wardrobe: pick(WARDROBE_DETAILS),
         pose: pick(POSE_DIRECTIONS),
-        sourceTransformer: pickMany(SOURCE_TRANSFORMERS, 3),
+        sourceTransformer: pickMany(SOURCE_TRANSFORMERS, 4),
+        personTwist: pick(PERSON_TWIST_MODES),
+        varietySeed: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
     }
 }
 
@@ -974,7 +1104,20 @@ Do NOT turn this person into a random animal, dog, pet, monster, unrelated creat
 Create a fictional stand-in inspired by the person's public role, profession, era, clothing, posture, source image composition, and career context.
 Do not copy the exact face, identity, or likeness of the real person.
 It should feel like a strange alternate-universe publicity photo, paparazzi photo, movie still, magazine portrait, toy figure, wax figure, TV still, or commercial portrait connected to this person.
-The weird twist should come from the selected character family, camera, lighting, materials, pose, and source details — not from replacing the person with an unrelated animal.
+
+Specific person twist for this generation:
+${styleMix.personTwist}
+
+The weird twist should come from:
+- the selected character family
+- the person's role or public context
+- the source image posture/colors
+- the wardrobe
+- the camera angle
+- the prop/background
+- the lighting/material choices
+
+The weird twist should NOT come from replacing the person with an unrelated animal.
 `
         : ""
 }
@@ -1002,6 +1145,9 @@ ${styleMix.pose}
 
 Source-dependent transformation rules:
 ${styleMix.sourceTransformer.join("\n")}
+
+Variety seed:
+${styleMix.varietySeed}
 
 Super important variety rules:
 Make this image look completely different from previous generations.
@@ -1250,18 +1396,84 @@ async function upstashCommand(command) {
     return data.result
 }
 
-async function getRecentGenerations() {
-    try {
-        const result = await upstashCommand(["GET", RECENT_KEY])
-        if (!result) return []
+async function getRecentFromUpstash() {
+    const result = await upstashCommand(["GET", RECENT_KEY])
+    if (!result) return []
 
-        const parsed = JSON.parse(result)
+    const parsed = JSON.parse(result)
+    if (!Array.isArray(parsed)) return []
+
+    return parsed.slice(0, 10)
+}
+
+async function saveRecentToUpstash(next) {
+    await upstashCommand(["SET", RECENT_KEY, JSON.stringify(next)])
+    return true
+}
+
+async function getRecentFromBlob() {
+    if (!process.env.BLOB_READ_WRITE_TOKEN) return []
+
+    try {
+        const { list } = await import("@vercel/blob")
+
+        const result = await list({
+            prefix: RECENT_BLOB_PATH,
+            limit: 1,
+        })
+
+        const blob =
+            result?.blobs?.find((item) => item.pathname === RECENT_BLOB_PATH) ||
+            result?.blobs?.[0]
+
+        if (!blob?.url) return []
+
+        const response = await fetch(`${blob.url}?t=${Date.now()}`, {
+            cache: "no-store",
+        })
+
+        if (!response.ok) return []
+
+        const parsed = await response.json()
+
         if (!Array.isArray(parsed)) return []
 
         return parsed.slice(0, 10)
     } catch {
         return []
     }
+}
+
+async function saveRecentToBlob(next) {
+    if (!process.env.BLOB_READ_WRITE_TOKEN) return false
+
+    try {
+        const { put } = await import("@vercel/blob")
+
+        await put(RECENT_BLOB_PATH, JSON.stringify(next, null, 2), {
+            access: "public",
+            contentType: "application/json",
+            allowOverwrite: true,
+        })
+
+        return true
+    } catch {
+        return false
+    }
+}
+
+async function getRecentGenerations() {
+    try {
+        const upstashRecent = await getRecentFromUpstash()
+        if (upstashRecent.length) return upstashRecent
+    } catch {}
+
+    try {
+        const blobRecent = await getRecentFromBlob()
+        if (blobRecent.length) return blobRecent
+    } catch {}
+
+    return []
 }
 
 async function saveRecentGeneration(item) {
@@ -1275,9 +1487,19 @@ async function saveRecentGeneration(item) {
             ...current.filter((existing) => existing.image !== item.image),
         ].slice(0, 10)
 
-        await upstashCommand(["SET", RECENT_KEY, JSON.stringify(next)])
+        let saved = false
 
-        return true
+        try {
+            if (getUpstashConfig()) {
+                saved = await saveRecentToUpstash(next)
+            }
+        } catch {}
+
+        if (!saved) {
+            saved = await saveRecentToBlob(next)
+        }
+
+        return saved
     } catch {
         return false
     }
