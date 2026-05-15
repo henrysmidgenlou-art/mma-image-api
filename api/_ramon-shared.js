@@ -625,13 +625,6 @@ const CHARACTER_ARCHETYPES = [
         avoid: "no animal transformation, no creature anatomy",
     },
     {
-        name: "Glossy Helmet Puppet",
-        body: "smooth synthetic puppet body with a helmet-shaped head and epoxy-like surface",
-        face: "small glassy eyes, tiny mouth, shiny acrylic facial planes",
-        mood: "1970s sci-fi, eerie but clean and colorful",
-        avoid: "no furry monster texture, no human skin realism",
-    },
-    {
         name: "Cursed Pet-Like Meme Creature",
         body: "dog-like or pet-like proportions, squat body, awkward limbs, internet-photo realism",
         face: "startled pet expression, funny wide eyes, wet nose or smooth animal-like features",
@@ -639,25 +632,11 @@ const CHARACTER_ARCHETYPES = [
         avoid: "no humanoid bald head, no normal person face",
     },
     {
-        name: "Food-Headed Performer",
-        body: "human or mannequin body wearing ordinary clothes, but the head or body is transformed into source-specific food/object forms",
-        face: "face may be absent, carved, tiny, or implied through object texture",
-        mood: "bright commercial absurdity, colorful, silly, instantly readable",
-        avoid: "no generic monster face, no gore",
-    },
-    {
         name: "Aquarium Bathroom Creature",
         body: "rubbery wet figure or object staged in a bathroom/aquarium world",
         face: "fish-like, smooth, partially hidden, or non-human; not the default big-eyed mascot",
         mood: "blue-lit porcelain surrealism, coral colors, absurd domestic setting",
         avoid: "no dry studio portrait",
-    },
-    {
-        name: "Toy Commercial Mascot",
-        body: "colorful molded toy-like character or mascot staged like a product commercial",
-        face: "painted toy features, shiny plastic eyes, cheerful but off",
-        mood: "bright 1990s toy ad, playful, colorful, product-photo energy",
-        avoid: "no dark horror lighting",
     },
     {
         name: "Scientific Field Specimen",
@@ -672,13 +651,6 @@ const CHARACTER_ARCHETYPES = [
         face: "tiny expressive face or no face depending on the source",
         mood: "domestic, funny, snapshot-like, discovered accidentally",
         avoid: "no giant heroic angle",
-    },
-    {
-        name: "Hardware Store Humanoid",
-        body: "body assembled from tools, hoses, plastic buckets, metal parts, or hardware-store materials",
-        face: "face made from object parts or absent entirely",
-        mood: "practical, funny, product-photo realism",
-        avoid: "no flesh face unless source requires it",
     },
 ]
 
@@ -751,6 +723,191 @@ const CAMERA_ANGLES = [
     "airport hallway candid angle",
     "old TV camera angle",
     "toy packaging product angle",
+]
+
+const LENS_AND_CAMERA_PACKS = [
+    {
+        name: "24mm Wide-Angle Flash",
+        description:
+            "shot on a 24mm wide-angle lens with strong perspective distortion, close camera, enlarged foreground objects, direct flash",
+    },
+    {
+        name: "Fisheye Snapshot",
+        description:
+            "shot with a fisheye lens, warped corners, curved room lines, subject too close to camera, chaotic snapshot energy",
+    },
+    {
+        name: "Disposable Camera Close-Up",
+        description:
+            "cheap disposable camera look, harsh flash, soft focus, red-eye possibility, awkward close framing",
+    },
+    {
+        name: "Telephoto Paparazzi Crop",
+        description:
+            "long-lens paparazzi crop, compressed background, slightly blurry, candid and intrusive feeling",
+    },
+    {
+        name: "Mall Portrait Lens",
+        description:
+            "soft 50mm portrait lens, fake studio backdrop, awkward formal framing, slightly too much headroom",
+    },
+    {
+        name: "Macro Object Lens",
+        description:
+            "macro close-up lens, strange texture detail, object or prop filling the frame, shallow depth of field",
+    },
+    {
+        name: "Security Camera Lens",
+        description:
+            "wide overhead security-camera view, distorted corners, surveillance angle, mundane but unsettling",
+    },
+    {
+        name: "VHS Camcorder Still",
+        description:
+            "VHS camcorder still-frame look, soft resolution, video noise, awkward home-video angle",
+    },
+    {
+        name: "Sports Photographer Low Lens",
+        description:
+            "low-angle sports photographer lens, dramatic foreground, flash, heroic but ridiculous pose",
+    },
+    {
+        name: "Product Catalog Lens",
+        description:
+            "straight-on catalog photography lens, clean object visibility, flat commercial staging",
+    },
+    {
+        name: "Old Magazine Photo Lens",
+        description:
+            "1970s magazine photography lens, soft grain, staged lighting, commercial but strange",
+    },
+    {
+        name: "Bathroom Mirror Camera",
+        description:
+            "camera reflected or implied in a bathroom mirror angle, cramped room perspective, porcelain highlights",
+    },
+    {
+        name: "Ultra-Wide Room Lens",
+        description:
+            "16mm ultra-wide interior lens, exaggerated room depth, background props stretched toward the edges",
+    },
+    {
+        name: "Close Portrait Lens",
+        description:
+            "tight 85mm portrait lens, shallow depth of field, background objects blurred but still recognizable",
+    },
+]
+
+const BACKGROUND_WORLDS = [
+    {
+        name: "Chaotic Source Shrine",
+        description:
+            "a cluttered background filled with handmade objects, photos, props, trophies, scraps, shelves, and strange decorations inspired by the Wikipedia source",
+    },
+    {
+        name: "Fake Movie Set",
+        description:
+            "a low-budget movie set with painted flats, visible props, fake smoke, cables, lights, miniature buildings, and source-related scenery",
+    },
+    {
+        name: "Airport / Hallway Candid",
+        description:
+            "an airport, hotel hallway, or backstage corridor filled with luggage, posters, ropes, strange signs with no readable text, and source-related props",
+    },
+    {
+        name: "Mall Portrait Studio",
+        description:
+            "a fake mall portrait studio backdrop with props, fake plants, soft lights, source-themed objects, and awkward studio staging",
+    },
+    {
+        name: "Museum Display Room",
+        description:
+            "a museum room with glass cases, velvet ropes, dusty labels with no readable text, specimen tables, and artifacts inspired by the source",
+    },
+    {
+        name: "Toy Store Display",
+        description:
+            "a toy store or catalog display filled with bright packaging shapes, plastic shelves, fake accessories, and source-related miniatures",
+    },
+    {
+        name: "Suburban Backyard Scene",
+        description:
+            "a normal backyard, driveway, porch, lawn, fence, grill, folding chairs, and bizarre source-specific objects scattered around",
+    },
+    {
+        name: "Public Access TV Studio",
+        description:
+            "a cheap local TV studio with curtains, chairs, fake plants, prop table, weird lighting, and source-related objects behind the subject",
+    },
+    {
+        name: "Corporate Training Room",
+        description:
+            "a beige office training room with projector carts, folding tables, binders, plastic chairs, charts with no readable text, and source-inspired props",
+    },
+    {
+        name: "Bathroom Aquarium Set",
+        description:
+            "a bathroom transformed into an aquarium-like scene with blue light, porcelain, coral props, wet reflections, and strange source-related objects",
+    },
+    {
+        name: "Hardware Store Aisle",
+        description:
+            "a hardware store aisle with buckets, hoses, tools, metal parts, plastic bins, warning colors, and source-inspired constructed objects",
+    },
+    {
+        name: "School Gym / Science Fair",
+        description:
+            "a school gym or science fair setup with poster boards, folding tables, handmade models, balloons, tape, and source-inspired displays",
+    },
+    {
+        name: "Red Carpet Gone Wrong",
+        description:
+            "a strange red-carpet or publicity-event setting with flash lighting, ropes, fake photographers, odd props, and no readable logos",
+    },
+    {
+        name: "Miniature Diorama World",
+        description:
+            "a tabletop miniature diorama with tiny buildings, fake landscape, toy props, visible scale model details, and source-related objects",
+    },
+    {
+        name: "Celebrity Storage Room",
+        description:
+            "a cramped storage room filled with costumes, fake awards, cardboard cutouts, props, old equipment, and source-inspired objects",
+    },
+    {
+        name: "Surreal Press Junket Room",
+        description:
+            "a press-interview room with chairs, fake backdrop shapes, microphones, odd publicity props, and no readable text",
+    },
+]
+
+const BACKGROUND_DENSITY = [
+    "minimal background with one very specific source-related prop",
+    "medium clutter with three to five visible source-related objects",
+    "busy background with many strange props connected to the Wikipedia topic",
+    "overstuffed scene with source-related objects everywhere, but still readable as one photograph",
+    "background tells a second story using objects from the source summary",
+]
+
+const WIKI_PROP_DIRECTIONS = [
+    "extract concrete nouns from the Wikipedia summary and turn them into physical props in the background",
+    "use the source's profession, location, era, or category to choose background objects",
+    "make the background feel like it belongs to the Wikipedia topic, not a random weird room",
+    "include one oversized prop based on the title or source image",
+    "include several tiny background details based on words from the summary",
+    "turn abstract source details into handmade physical props, trophies, tools, posters with no readable text, costumes, or objects",
+    "make the environment feel like a shrine, museum display, film set, store display, or public event dedicated to the source topic",
+]
+
+const SCENE_ACTIONS = [
+    "the subject is being photographed during an awkward staged publicity moment",
+    "the subject appears to have just walked into the bizarre room",
+    "the subject is presenting a strange source-related object to the camera",
+    "the subject is surrounded by props as if in a low-budget documentary reenactment",
+    "the subject is frozen mid-pose while the background feels accidentally chaotic",
+    "the subject is treated like a celebrity guest in a completely inappropriate setting",
+    "the subject is posed like a product model while the background objects explain the source topic",
+    "the scene looks like a real behind-the-scenes photo from a strange production",
 ]
 
 const LIGHTING_STYLES = [
@@ -918,171 +1075,6 @@ const SOURCE_TRANSFORMERS = [
     "make the outfit or setting reflect the source person's profession or public role",
 ]
 
-const LENS_AND_CAMERA_PACKS = [
-    {
-        name: "24mm Wide-Angle Flash",
-        description:
-            "shot on a 24mm wide-angle lens with strong perspective distortion, close camera, enlarged foreground objects, direct flash",
-    },
-    {
-        name: "Fisheye Snapshot",
-        description:
-            "shot with a fisheye lens, warped corners, curved room lines, subject too close to camera, chaotic snapshot energy",
-    },
-    {
-        name: "Disposable Camera Close-Up",
-        description:
-            "cheap disposable camera look, harsh flash, soft focus, red-eye possibility, awkward close framing",
-    },
-    {
-        name: "Telephoto Paparazzi Crop",
-        description:
-            "long-lens paparazzi crop, compressed background, slightly blurry, candid and intrusive feeling",
-    },
-    {
-        name: "Mall Portrait Lens",
-        description:
-            "soft 50mm portrait lens, fake studio backdrop, awkward formal framing, slightly too much headroom",
-    },
-    {
-        name: "Macro Object Lens",
-        description:
-            "macro close-up lens, strange texture detail, object or prop filling the frame, shallow depth of field",
-    },
-    {
-        name: "Security Camera Lens",
-        description:
-            "wide overhead security-camera view, distorted corners, surveillance angle, mundane but unsettling",
-    },
-    {
-        name: "VHS Camcorder Still",
-        description:
-            "VHS camcorder still-frame look, soft resolution, video noise, awkward home-video angle",
-    },
-    {
-        name: "Sports Photographer Low Lens",
-        description:
-            "low-angle sports photographer lens, dramatic foreground, flash, heroic but ridiculous pose",
-    },
-    {
-        name: "Product Catalog Lens",
-        description:
-            "straight-on catalog photography lens, clean object visibility, flat commercial staging",
-    },
-    {
-        name: "Old Magazine Photo Lens",
-        description:
-            "1970s magazine photography lens, soft grain, staged lighting, commercial but strange",
-    },
-    {
-        name: "Bathroom Mirror Camera",
-        description:
-            "camera reflected or implied in a bathroom mirror angle, cramped room perspective, porcelain highlights",
-    },
-]
-
-const BACKGROUND_WORLDS = [
-    {
-        name: "Chaotic Source Shrine",
-        description:
-            "a cluttered background filled with handmade objects, photos, props, trophies, scraps, and strange decorations inspired by the Wikipedia source",
-    },
-    {
-        name: "Fake Movie Set",
-        description:
-            "a low-budget movie set with painted flats, visible props, fake smoke, cables, lights, miniature buildings, and source-related scenery",
-    },
-    {
-        name: "Airport / Hallway Candid",
-        description:
-            "an airport, hotel hallway, or backstage corridor filled with luggage, posters, ropes, strange signs with no readable text, and source-related props",
-    },
-    {
-        name: "Mall Portrait Studio",
-        description:
-            "a fake mall portrait studio backdrop with props, fake plants, soft lights, source-themed objects, and awkward studio staging",
-    },
-    {
-        name: "Museum Display Room",
-        description:
-            "a museum room with glass cases, velvet ropes, dusty labels with no readable text, specimen tables, and artifacts inspired by the source",
-    },
-    {
-        name: "Toy Store Display",
-        description:
-            "a toy store or catalog display filled with bright packaging shapes, plastic shelves, fake accessories, and source-related miniatures",
-    },
-    {
-        name: "Suburban Backyard Scene",
-        description:
-            "a normal backyard, driveway, porch, lawn, fence, grill, folding chairs, and bizarre source-specific objects scattered around",
-    },
-    {
-        name: "Public Access TV Studio",
-        description:
-            "a cheap local TV studio with curtains, chairs, fake plants, prop table, weird lighting, and source-related objects behind the subject",
-    },
-    {
-        name: "Corporate Training Room",
-        description:
-            "a beige office training room with projector carts, folding tables, binders, plastic chairs, charts with no readable text, and source-inspired props",
-    },
-    {
-        name: "Bathroom Aquarium Set",
-        description:
-            "a bathroom transformed into an aquarium-like scene with blue light, porcelain, coral props, wet reflections, and strange source-related objects",
-    },
-    {
-        name: "Hardware Store Aisle",
-        description:
-            "a hardware store aisle with buckets, hoses, tools, metal parts, plastic bins, warning colors, and source-inspired constructed objects",
-    },
-    {
-        name: "School Gym / Science Fair",
-        description:
-            "a school gym or science fair setup with poster boards, folding tables, handmade models, balloons, tape, and source-inspired displays",
-    },
-    {
-        name: "Red Carpet Gone Wrong",
-        description:
-            "a strange red-carpet or publicity-event setting with flash lighting, ropes, fake photographers, odd props, and no readable logos",
-    },
-    {
-        name: "Miniature Diorama World",
-        description:
-            "a tabletop miniature diorama with tiny buildings, fake landscape, toy props, visible scale model details, and source-related objects",
-    },
-]
-
-const BACKGROUND_DENSITY = [
-    "minimal background with one very specific source-related prop",
-    "medium clutter with three to five visible source-related objects",
-    "busy background with many strange props connected to the Wikipedia topic",
-    "overstuffed scene with source-related objects everywhere, but still readable as one photograph",
-    "background tells a second story using objects from the source summary",
-]
-
-const WIKI_PROP_DIRECTIONS = [
-    "extract concrete nouns from the Wikipedia summary and turn them into physical props in the background",
-    "use the source's profession, location, era, or category to choose background objects",
-    "make the background feel like it belongs to the Wikipedia topic, not a random weird room",
-    "include one oversized prop based on the title or source image",
-    "include several tiny background details based on words from the summary",
-    "turn abstract source details into handmade physical props, trophies, tools, posters with no readable text, costumes, or objects",
-    "make the environment feel like a shrine, museum display, film set, store display, or public event dedicated to the source topic",
-]
-
-const SCENE_ACTIONS = [
-    "the subject is being photographed during an awkward staged publicity moment",
-    "the subject appears to have just walked into the bizarre room",
-    "the subject is presenting a strange source-related object to the camera",
-    "the subject is surrounded by props as if in a low-budget documentary reenactment",
-    "the subject is frozen mid-pose while the background feels accidentally chaotic",
-    "the subject is treated like a celebrity guest in a completely inappropriate setting",
-    "the subject is posed like a product model while the background objects explain the source topic",
-    "the scene looks like a real behind-the-scenes photo from a strange production",
-]
-
 const PERSON_TWIST_MODES = [
     "fictional wax museum version",
     "fictional toy-commercial version",
@@ -1180,6 +1172,8 @@ function buildStyleMix(page) {
         : null
 
     const styleWorld = pick(STYLE_WORLDS)
+    const lensPack = pick(LENS_AND_CAMERA_PACKS)
+    const backgroundWorld = pick(BACKGROUND_WORLDS)
 
     return {
         profile,
@@ -1191,6 +1185,11 @@ function buildStyleMix(page) {
             name: styleWorld,
         },
         cameraAngle: pick(CAMERA_ANGLES),
+        lensPack,
+        backgroundWorld,
+        backgroundDensity: pick(BACKGROUND_DENSITY),
+        wikiPropDirections: pickMany(WIKI_PROP_DIRECTIONS, 3),
+        sceneAction: pick(SCENE_ACTIONS),
         lighting: pick(LIGHTING_STYLES),
         colorMood: pick(COLOR_MOODS),
         materials: pickMany(MATERIALS, 3),
@@ -1290,8 +1289,25 @@ The weird twist should NOT come from replacing the person with an unrelated anim
 Visual world:
 ${styleMix.styleWorld}
 
-Camera:
+Camera angle:
 ${styleMix.cameraAngle}
+
+Lens / camera behavior:
+${styleMix.lensPack.name}
+${styleMix.lensPack.description}
+
+Background world:
+${styleMix.backgroundWorld.name}
+${styleMix.backgroundWorld.description}
+
+Background density:
+${styleMix.backgroundDensity}
+
+Scene action:
+${styleMix.sceneAction}
+
+Background must be source-specific:
+${styleMix.wikiPropDirections.join("\n")}
 
 Lighting:
 ${styleMix.lighting}
@@ -1316,10 +1332,15 @@ ${styleMix.varietySeed}
 
 Super important variety rules:
 Make this image look completely different from previous generations.
-Do not reuse the same character head shape, same eye shape, same mouth, same bald mascot look, same portrait setup, or same rubber creature formula.
+Do not reuse the same character head shape, same eye shape, same mouth, same bald mascot look, same portrait setup, same rubber creature formula, or same plain background.
 If this is a character, its silhouette, face, body, costume, material, setting, and mood must come from the selected character family and the Wikipedia source.
 If this is not a character, do not sneak in a face.
 The image must feel connected to the actual Wikipedia topic, not like a random unrelated weird creature.
+
+The background must also feel connected to the Wikipedia topic.
+Do not use a plain empty background unless the selected background density says minimal.
+Use the Wikipedia title, source image, and summary anchors to create visible background props, setting details, strange objects, costumes, displays, shelves, posters with no readable text, trophies, tools, furniture, miniatures, or event scenery.
+The background should change dramatically from generation to generation.
 
 Make it look like a photographed image, not polished digital fantasy art.
 It can be bright, funny, awkward, surreal, colorful, domestic, commercial, documentary, toy-like, scientific, or meme-like depending on the selected style and source.
