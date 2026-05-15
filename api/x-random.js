@@ -24,6 +24,22 @@ function getQuery(req) {
     return Object.fromEntries(url.searchParams.entries())
 }
 
+function pick(arr) {
+    return arr[Math.floor(Math.random() * arr.length)]
+}
+
+function pickMany(arr, count) {
+    const copy = [...arr]
+    const result = []
+
+    while (copy.length && result.length < count) {
+        const index = Math.floor(Math.random() * copy.length)
+        result.push(copy.splice(index, 1)[0])
+    }
+
+    return result
+}
+
 function isAuthorized(req, query) {
     const cronSecret =
         process.env.CRON_SECRET ||
@@ -92,6 +108,128 @@ function describeError(error) {
     }
 }
 
+const X_PRESENTATIONS = [
+    "weird live-action publicity photograph",
+    "awkward paparazzi snapshot",
+    "low-budget movie still",
+    "public-access TV still frame",
+    "red carpet photo gone wrong",
+    "tabloid evidence-style photograph",
+    "surreal domestic candid photo",
+    "strange magazine portrait",
+    "behind-the-scenes press photo",
+    "airport hallway candid",
+    "wax museum snapshot",
+    "cheap commercial portrait",
+    "documentary-style weird room photo",
+]
+
+const X_SCENES = [
+    "cluttered source-specific shrine room",
+    "fake movie set with visible props",
+    "airport or hotel hallway filled with source-related objects",
+    "public-access TV studio with strange props",
+    "suburban backyard filled with bizarre source details",
+    "museum display room with artifacts from the source topic",
+    "press junket room with odd background objects",
+    "chaotic dressing room or storage room",
+    "red-carpet event space with no readable logos",
+    "corporate training room themed around the source",
+    "low-budget documentary reenactment scene",
+    "mall portrait studio with source-related props",
+]
+
+const X_LENSES = [
+    "24mm wide-angle lens with strong perspective distortion",
+    "fisheye lens with warped edges and chaotic room perspective",
+    "cheap disposable camera with direct flash",
+    "telephoto paparazzi crop with compressed background",
+    "VHS camcorder still-frame look",
+    "85mm close portrait lens with shallow depth of field",
+    "security-camera-style wide overhead lens",
+    "low-angle sports photographer lens",
+    "ultra-wide room lens showing lots of background clutter",
+]
+
+const X_LIGHTING = [
+    "harsh direct flash with ugly shadows",
+    "cold fluorescent hallway lighting",
+    "cheap TV studio lighting",
+    "flashlit nighttime scene",
+    "soft awkward portrait lighting",
+    "overexposed daylight",
+    "single overhead bulb",
+    "wax museum spotlighting",
+    "murky VHS gray lighting",
+    "bright commercial lighting used in a strange way",
+]
+
+const X_BACKGROUND_RULES = [
+    "make the background contain multiple visible props based on concrete nouns from the Wikipedia summary",
+    "make the environment feel dedicated to the Wikipedia topic rather than a random room",
+    "include one oversized object based on the title or source image",
+    "scatter small source-specific objects across the background",
+    "turn the subject's profession, location, era, or category into set dressing",
+    "make the background tell a second story about the Wikipedia page",
+    "use the source image colors as hints for props and background objects",
+    "make the scene look like a real photographed event, not a clean product render",
+]
+
+function buildXRandomPrompt(basePrompt, page, styleMix) {
+    const title = page?.title || "Random Wikipedia Subject"
+    const summary = page?.extract || ""
+    const isPerson = Boolean(styleMix?.profile?.isPerson)
+    const xPresentation = pick(X_PRESENTATIONS)
+    const xScene = pick(X_SCENES)
+    const xLens = pick(X_LENSES)
+    const xLighting = pick(X_LIGHTING)
+    const xRules = pickMany(X_BACKGROUND_RULES, 4)
+
+    return `
+${basePrompt}
+
+X RANDOM EXTRA RANDOMIZATION LAYER:
+This version is for an automated X post, so make it feel like a surprising real photo people would stop scrolling for.
+
+X-specific randomized direction:
+- presentation: ${xPresentation}
+- scene: ${xScene}
+- lens: ${xLens}
+- lighting: ${xLighting}
+
+X-specific background rules:
+${xRules.map((rule) => `- ${rule}`).join("\n")}
+
+${
+    isPerson
+        ? `
+X person-page rule:
+The Wikipedia topic is a person or public figure.
+Keep the image person-first and source-inspired.
+The person should loosely resemble the source photo through hairstyle, face shape, age range, posture, wardrobe vibe, and public-role cues.
+Do not copy the exact face perfectly.
+Do not replace the person with a random animal, toy, dog, pet, monster, or unrelated mascot.
+`
+        : `
+X non-person rule:
+Keep the main subject visibly connected to the Wikipedia topic.
+Do not turn the topic into a generic toy, mascot, or unrelated creature.
+`
+}
+
+Toy / wax balance:
+Wax museum, mannequin, puppet, or prop-like qualities are allowed only if they fit the randomized presentation.
+Do not make every image look like a toy, action figure, collectible, boxed product, doll, or toy commercial.
+If toy-like language appears anywhere in the earlier prompt, reinterpret it as background props, practical effects, set dressing, or a strange real-world photographed object unless the source itself strongly supports a toy.
+
+Final X style:
+Make the final image feel candid, photographic, source-specific, weird, and different from previous generations.
+The scene should have a clear subject plus a background with visible source-related objects.
+Avoid plain empty backgrounds.
+Avoid repeating the same face, same lens, same pose, same toy look, or same wax figure setup every time.
+`.trim()
+}
+
 module.exports = async function handler(req, res) {
     const query = getQuery(req)
 
@@ -118,7 +256,10 @@ module.exports = async function handler(req, res) {
         const wikiUrl = getWikipediaPageUrl(page)
         const wikiImageUrl = getWikipediaImageUrl(page)
         const ticker = makeTicker(page?.title)
-        const { prompt, styleMix } = buildPromptFromPage(page)
+
+        let { prompt, styleMix } = buildPromptFromPage(page)
+
+        prompt = buildXRandomPrompt(prompt, page, styleMix)
 
         let generated
         try {
@@ -203,8 +344,8 @@ module.exports = async function handler(req, res) {
             model: generated.model,
             size: generated.size,
             quality: generated.quality,
-            styleWorld: styleMix?.world?.name || "",
             prompt,
+            stylePlan: styleMix,
             image: includeImage
                 ? `data:${generated.mimeType};base64,${generated.b64}`
                 : undefined,
