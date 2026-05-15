@@ -93,6 +93,24 @@ function inferWikiProfile(page) {
             "king",
             "queen",
             "biography",
+            "player",
+            "athlete",
+            "professor",
+            "director",
+            "producer",
+            "composer",
+            "poet",
+            "journalist",
+            "activist",
+            "lawyer",
+            "mayor",
+            "governor",
+            "minister",
+            "wrestler",
+            "boxer",
+            "coach",
+            "model",
+            "designer",
         ]),
         isAnimal: hasAny([
             "animal",
@@ -131,6 +149,9 @@ function inferWikiProfile(page) {
             "church",
             "castle",
             "station",
+            "district",
+            "province",
+            "county",
         ]),
         isObject: hasAny([
             "device",
@@ -152,6 +173,8 @@ function inferWikiProfile(page) {
             "album",
             "film",
             "software",
+            "painting",
+            "sculpture",
         ]),
         isScience: hasAny([
             "chemical",
@@ -169,6 +192,7 @@ function inferWikiProfile(page) {
             "specimen",
             "mineral",
             "molecule",
+            "organism",
         ]),
         isDomestic: hasAny([
             "house",
@@ -197,6 +221,10 @@ function inferWikiProfile(page) {
             "cuisine",
             "sauce",
             "cheese",
+            "corn",
+            "potato",
+            "rice",
+            "soup",
         ]),
         isEvent: hasAny([
             "war",
@@ -239,226 +267,373 @@ function inferWikiProfile(page) {
             "odd",
             "unusual",
             "strange",
+            "fictional",
         ]),
     }
 }
 
+function extractWikiAnchors(page) {
+    const title = String(page?.title || "")
+    const summary = String(page?.extract || "")
+
+    const words = `${title} ${summary}`
+        .replace(/[^\w\s-]/g, " ")
+        .split(/\s+/)
+        .map((word) => word.trim())
+        .filter((word) => word.length > 4)
+        .filter(
+            (word) =>
+                ![
+                    "about",
+                    "which",
+                    "their",
+                    "there",
+                    "first",
+                    "after",
+                    "before",
+                    "known",
+                    "where",
+                    "while",
+                    "being",
+                    "other",
+                    "through",
+                    "during",
+                    "would",
+                    "could",
+                    "should",
+                    "wikipedia",
+                    "article",
+                    "english",
+                ].includes(word.toLowerCase())
+        )
+
+    const unique = [...new Set(words)].slice(0, 14)
+
+    return unique.length ? unique.join(", ") : title
+}
+
 const FORM_MODES = [
-    {
-        name: "Strange Product Photo",
-        characterAllowed: false,
-        description:
-            "do not make a character; turn the source into a bizarre physical product, prototype, appliance, toy, gadget, package, or catalog object",
-    },
-    {
-        name: "Room / Environment Scene",
-        characterAllowed: false,
-        description:
-            "do not make a character; turn the source into a strange room, staged environment, hallway, office, bathroom, bedroom, gym, or miniature set",
-    },
-    {
-        name: "Museum Object / Specimen",
-        characterAllowed: false,
-        description:
-            "do not make a humanoid; present the source as an artifact, specimen, preserved object, sculpture, fossil-like thing, or unexplained museum item",
-    },
-    {
-        name: "Food / Object Close-Up",
-        characterAllowed: false,
-        description:
-            "do not make a person; turn the source into a weird close-up of food, material, texture, household object, mechanical part, or physical prop",
-    },
-    {
-        name: "Toy / Packaging / Catalog",
-        characterAllowed: false,
-        description:
-            "do not default to a living being; make the source feel like a toy, boxed object, product catalog photo, shelf display, or fake commercial item",
-    },
-    {
-        name: "Architectural / Place Photo",
-        characterAllowed: false,
-        description:
-            "do not make a mascot; translate the source into a strange building, landscape, room, monument, stage set, or location photograph",
-    },
-    {
-        name: "Animal / Field Discovery",
-        characterAllowed: true,
-        description:
-            "only use a creature if the source supports it; make it feel like a field-guide discovery, strange animal documentation, or wildlife snapshot",
-    },
     {
         name: "Human Portrait / Meme Photo",
         characterAllowed: true,
+        weightForPeople: 8,
         description:
-            "use a person only if the source supports it; create a fictional human, performer, awkward portrait, or meme-like snapshot without copying a real likeness",
+            "make a fictionalized person-like image inspired by the source, but do not copy a real likeness",
     },
     {
         name: "Mascot / Costume / Performer",
         characterAllowed: true,
+        weightForPeople: 7,
         description:
-            "a mascot or costumed performer is allowed, but avoid the same bald head, giant eyes, and generic creature formula",
+            "make a costumed performer, mascot, suit, public-access guest, or staged character inspired by the source",
     },
     {
-        name: "Abstract Physical Prop",
-        characterAllowed: false,
+        name: "Toy / Action Figure / Doll",
+        characterAllowed: true,
+        weightForPeople: 6,
         description:
-            "do not make a face; turn the source into an abstract real-world prop, sculpture, machine, texture, diagram-like object, or impossible handmade construction",
+            "make the source into a toy-like figure, doll, action figure, puppet, package photo, or catalog character",
+    },
+    {
+        name: "Creature / Field Discovery",
+        characterAllowed: true,
+        weightForPeople: 3,
+        description:
+            "make a strange documented creature only if the source supports it; base anatomy on the source, not a generic monster",
+    },
+    {
+        name: "Strange Product Photo",
+        characterAllowed: false,
+        weightForPeople: 2,
+        description:
+            "do not make a character; turn the source into a bizarre physical product, prototype, appliance, gadget, package, or catalog object",
+    },
+    {
+        name: "Room / Environment Scene",
+        characterAllowed: false,
+        weightForPeople: 2,
+        description:
+            "turn the source into a strange room, staged environment, hallway, office, bathroom, bedroom, gym, or miniature set",
+    },
+    {
+        name: "Museum Object / Specimen",
+        characterAllowed: false,
+        weightForPeople: 1,
+        description:
+            "present the source as an artifact, preserved object, sculpture, fossil-like thing, or unexplained museum item",
+    },
+    {
+        name: "Food / Object Close-Up",
+        characterAllowed: false,
+        weightForPeople: 1,
+        description:
+            "turn the source into a weird close-up of food, material, texture, household object, mechanical part, or physical prop",
+    },
+    {
+        name: "Architectural / Place Photo",
+        characterAllowed: false,
+        weightForPeople: 1,
+        description:
+            "translate the source into a strange building, landscape, room, monument, stage set, or location photograph",
+    },
+]
+
+const CHARACTER_ARCHETYPES = [
+    {
+        name: "Low-Angle Giant Human",
+        body: "oversized human-like figure, huge hands or torso, photographed from far below",
+        face: "normal-ish human face with awkward realism, not a puppet face",
+        mood: "heroic, silly, monumental, like a ridiculous public statue came alive",
+        avoid: "no mascot head, no giant cartoon eyes, no generic monster",
+    },
+    {
+        name: "Glossy Helmet Puppet",
+        body: "smooth synthetic puppet body with a helmet-shaped head and epoxy-like surface",
+        face: "small glassy eyes, tiny mouth, shiny acrylic facial planes",
+        mood: "1970s sci-fi, eerie but clean and colorful",
+        avoid: "no furry monster texture, no human skin realism",
+    },
+    {
+        name: "Cursed Pet-Like Meme Creature",
+        body: "dog-like or pet-like proportions, squat body, awkward limbs, internet-photo realism",
+        face: "startled pet expression, funny wide eyes, wet nose or smooth animal-like features",
+        mood: "funny first, creepy second, like an old viral image",
+        avoid: "no humanoid bald head, no normal person face",
+    },
+    {
+        name: "Food-Headed Performer",
+        body: "human or mannequin body wearing ordinary clothes, but the head or body is transformed into source-specific food/object forms",
+        face: "face may be absent, carved, tiny, or implied through object texture",
+        mood: "bright commercial absurdity, colorful, silly, instantly readable",
+        avoid: "no generic monster face, no gore",
+    },
+    {
+        name: "Aquarium Bathroom Creature",
+        body: "rubbery wet figure or object staged in a bathroom/aquarium world",
+        face: "fish-like, smooth, partially hidden, or non-human; not the default big-eyed mascot",
+        mood: "blue-lit porcelain surrealism, coral colors, absurd domestic setting",
+        avoid: "no dry studio portrait",
+    },
+    {
+        name: "Mall Portrait Alien Relative",
+        body: "stiff seated or standing figure posed like an awkward family portrait",
+        face: "forced smile, strange but gentle features, soft studio weirdness",
+        mood: "family-photo energy, awkward and wholesome, not scary",
+        avoid: "no horror monster posture",
+    },
+    {
+        name: "Public Access TV Guest",
+        body: "bizarre seated guest or host on a cheap local TV set",
+        face: "odd costume, prop head, mask, or uncomfortable human expression",
+        mood: "VHS still frame, awkward interview, cheap studio lights",
+        avoid: "no cinematic monster close-up",
+    },
+    {
+        name: "Toy Commercial Mascot",
+        body: "colorful molded toy-like character or mascot staged like a product commercial",
+        face: "painted toy features, shiny plastic eyes, cheerful but off",
+        mood: "bright 1990s toy ad, playful, colorful, product-photo energy",
+        avoid: "no dark horror lighting",
+    },
+    {
+        name: "Corporate Training Dummy",
+        body: "office-training mannequin, presenter, or dummy in beige corporate setting",
+        face: "instructional blank stare, plastic or mannequin-like, awkward professionalism",
+        mood: "cursed office training video, fluorescent, serious and absurd",
+        avoid: "no fantasy creature anatomy",
+    },
+    {
+        name: "Scientific Field Specimen",
+        body: "specific animal-human or specimen anatomy based on the Wikipedia topic",
+        face: "field-guide realism, animal-like or specimen-like, not cartoon",
+        mood: "documentary, naturalist, clear daylight, strange discovery",
+        avoid: "no generic mascot costume",
+    },
+    {
+        name: "Rubber Suit Movie Extra",
+        body: "visible rubber suit, foam seams, practical-effects costume, awkward posture",
+        face: "mask or prosthetic face with handmade detail",
+        mood: "low-budget movie still, cinematic but cheap, physical effects",
+        avoid: "no polished digital fantasy",
+    },
+    {
+        name: "Smooth Internet Doll Face",
+        body: "small or stiff body with doll-like proportions and compressed internet-image texture",
+        face: "smooth uncanny doll face, tiny features, awkward close framing",
+        mood: "cursed meme image, funny and uncomfortable",
+        avoid: "no latex monster suit",
+    },
+    {
+        name: "Old Magazine Advertisement Person",
+        body: "fictional spokesperson or model posed in an old advertisement layout",
+        face: "smiling too intensely or deadpan like a print ad model",
+        mood: "bright magazine ad, product demonstration, absurd optimism",
+        avoid: "no creature transformation unless source demands it",
+    },
+    {
+        name: "Sports Card Oddity",
+        body: "athletic pose, trading-card portrait, uniform or costume based on source keywords",
+        face: "serious game-face expression or mascot-athlete stare",
+        mood: "1990s sports card photo, flash, bold posture",
+        avoid: "no museum specimen framing",
+    },
+    {
+        name: "Suburban Backyard Giant",
+        body: "large awkward figure in a normal backyard, porch, driveway, or lawn",
+        face: "human, mask, object, or animal face based on source",
+        mood: "daylight neighborhood photo, absurd scale, strangely believable",
+        avoid: "no studio background",
+    },
+    {
+        name: "Handmade Parade Float Person",
+        body: "bulky papier-mâché costume or parade-float style body",
+        face: "painted handmade face, uneven craft texture, source-specific shape",
+        mood: "local parade, homemade, bright, silly, public event photo",
+        avoid: "no sleek plastic toy finish",
+    },
+    {
+        name: "Tiny Roommate Creature",
+        body: "small person/creature/object living in an ordinary room, table, bed, or shelf",
+        face: "tiny expressive face or no face depending on the source",
+        mood: "domestic, funny, snapshot-like, discovered accidentally",
+        avoid: "no giant heroic angle",
+    },
+    {
+        name: "Ancient Portrait Figure",
+        body: "stiff historical portrait pose translated into a photographed costume or prop",
+        face: "painted, powdered, masked, or serious museum-like expression",
+        mood: "old portrait meets real flash photo, strange and formal",
+        avoid: "no modern meme compression",
+    },
+    {
+        name: "Hardware Store Humanoid",
+        body: "body assembled from tools, hoses, plastic buckets, metal parts, or hardware-store materials",
+        face: "face made from object parts or absent entirely",
+        mood: "practical, funny, product-photo realism",
+        avoid: "no flesh face unless source requires it",
+    },
+    {
+        name: "Medical Demonstration Dummy",
+        body: "non-graphic clinical demonstration dummy, plastic anatomy model, sterile room",
+        face: "smooth medical mannequin face or featureless head",
+        mood: "clean, unsettling, textbook-photo realism",
+        avoid: "no gore, no wounds",
+    },
+    {
+        name: "Claymation-Looking Real Puppet",
+        body: "soft rounded handmade body, clay-like surface, visible handmade imperfections",
+        face: "simple handmade facial features, uneven eyes, not symmetrical",
+        mood: "looks like a physical stop-motion puppet photographed in real life",
+        avoid: "no glossy AI fantasy finish",
+    },
+    {
+        name: "Inflatable Vinyl Person",
+        body: "air-filled vinyl body, rounded swollen limbs, seams and glossy wrinkles",
+        face: "printed or molded face, slightly misaligned, toy-like",
+        mood: "weird promotional inflatable photographed seriously",
+        avoid: "no realistic skin",
+    },
+    {
+        name: "Old Wax Museum Figure",
+        body: "stiff wax figure body, formal posture, museum display lighting",
+        face: "slightly melted wax face, blank eyes, too-still expression",
+        mood: "dusty wax museum realism, strange but quiet",
+        avoid: "no rubber monster suit",
+    },
+    {
+        name: "Appliance-Head Person",
+        body: "ordinary human body with a source-specific machine, appliance, helmet, object, or artifact replacing the head",
+        face: "no normal face; the object itself is the head",
+        mood: "deadpan, funny, product-meets-person surrealism",
+        avoid: "no eyes unless the source object naturally suggests them",
     },
 ]
 
 const STYLE_WORLDS = [
-    {
-        name: "Bright Absurd Commercial",
-        description:
-            "a brightly lit, silly, colorful commercial-style photo, playful and bizarre, exaggerated but still photographic",
-    },
-    {
-        name: "Weird Family Snapshot",
-        description:
-            "a surreal family snapshot, awkward but sincere, physically real, mundane setting turned bizarre",
-    },
-    {
-        name: "Low-Budget Sci-Fi Still",
-        description:
-            "a cheap but memorable science-fiction movie still, practical effects, theatrical set design, cinematic but awkward",
-    },
-    {
-        name: "Mall Portrait Studio",
-        description:
-            "a stiff portrait-studio photo with fake backdrop, awkward pose, over-serious energy, uncanny normality",
-    },
-    {
-        name: "Tabloid Shock Photo",
-        description:
-            "a sensational tabloid-style image, direct flash, caught-at-the-wrong-moment energy, strange but believable",
-    },
-    {
-        name: "Public Access TV Still",
-        description:
-            "a weird local-TV still frame, harsh studio lighting, strange set, awkward host or guest energy",
-    },
-    {
-        name: "Museum Archive Documentation",
-        description:
-            "a deadpan archive or specimen photo, subject presented clearly like an unexplained artifact or preserved thing",
-    },
-    {
-        name: "Toy / Catalog Photo",
-        description:
-            "a strange product-catalog or toy-ad style photograph, colorful, clean, playful, but clearly weird",
-    },
-    {
-        name: "Field Guide Discovery",
-        description:
-            "a wildlife or scientific field-guide photo, curious, clear, strange, as if documenting something impossible",
-    },
-    {
-        name: "Corporate Training Video Still",
-        description:
-            "a cursed office-training still, beige realism, serious instructional pose, deeply awkward energy",
-    },
-    {
-        name: "Surreal Domestic Photo",
-        description:
-            "a bizarre image inside a familiar home environment, domestic and ordinary but transformed into something absurd",
-    },
-    {
-        name: "Heroic Giant Perspective",
-        description:
-            "a dramatic low-angle photo that makes the subject seem oversized, absurdly important, or comically monumental",
-    },
-    {
-        name: "Cursed Internet Meme Photo",
-        description:
-            "a low-resolution viral-looking image, funny and unsettling, awkward flash, strange proportions, meme-like realism",
-    },
-    {
-        name: "Aquarium Bathroom Diorama",
-        description:
-            "a surreal bathroom or aquarium-like set, wet blue lighting, coral textures, porcelain objects, absurd placement",
-    },
-    {
-        name: "1970s Epoxy Puppet / Object Photo",
-        description:
-            "a glossy synthetic object or puppet-like prop, epoxy acrylic surface, rounded forms, theatrical 1970s lighting",
-    },
-    {
-        name: "Food Magazine Gone Wrong",
-        description:
-            "a bright old food-magazine photograph, strange edible forms, staged plates, glossy highlights, funny but physically real",
-    },
-    {
-        name: "Hardware Store Catalog",
-        description:
-            "a plain product photograph of tools, objects, parts, shelves, labels removed, practical and weirdly serious",
-    },
-    {
-        name: "School Science Fair Display",
-        description:
-            "a handmade poster-board or science-fair style display, awkward craft materials, physical model, fluorescent room lighting",
-    },
-    {
-        name: "Miniature Model Set",
-        description:
-            "a tabletop miniature scene, model railroad realism, tiny props, visible handmade scale details, photographed close",
-    },
+    "bright surreal commercial photography",
+    "awkward family snapshot",
+    "low-budget sci-fi movie still",
+    "mall portrait studio photo",
+    "tabloid newspaper evidence photo",
+    "public-access TV still frame",
+    "museum archive documentation",
+    "toy catalog photography",
+    "field-guide discovery photo",
+    "corporate training video still",
+    "suburban backyard snapshot",
+    "old magazine advertisement",
+    "1990s sports card photo",
+    "hardware store product catalog",
+    "school science fair display",
+    "miniature model set photography",
+    "food magazine photo gone wrong",
+    "bathroom aquarium surrealism",
+    "local parade documentation",
+    "cursed low-resolution internet photo",
+    "wax museum snapshot",
+    "old product demonstration photo",
+    "strange yearbook portrait",
+    "toy store display photo",
 ]
 
 const CAMERA_ANGLES = [
-    "extreme low angle looking upward, making the source feel giant and ridiculous",
-    "high angle looking down from above, making the source look trapped, small, or clinical",
-    "tight close-up filling the frame with object texture or subject detail",
-    "wide-angle full scene shot with exaggerated perspective",
-    "awkward off-center snapshot framing like the photographer reacted too late",
-    "front-facing deadpan documentation framing",
+    "extreme low angle looking upward",
+    "high angle looking down from above",
+    "tight flash close-up",
+    "wide-angle full-body shot with exaggerated perspective",
+    "awkward off-center snapshot",
+    "front-facing deadpan portrait",
     "fisheye-like near-camera distortion",
-    "medium shot with too much empty space around the subject",
-    "point-of-view angle as if the camera stumbled into the scene",
-    "doorway or hallway angle, peeking into the situation",
-    "floor-level shot looking slightly upward",
+    "medium shot with too much empty space",
+    "point-of-view angle as if accidentally discovered",
+    "doorway or hallway peeking angle",
+    "floor-level shot",
     "surveillance-like overhead angle",
-    "backlit silhouette shot with the subject mostly in shadow",
-    "heroic promotional angle like a product poster gone wrong",
-    "awkward posed school-photo angle only if a person or mascot is appropriate",
-    "slightly tilted dutch-angle composition",
-    "macro-close detail shot of material, food, machinery, surface, or artifact",
-    "wide lens inches from the object, making proportions feel huge and warped",
-    "straight-on product catalog composition with blank serious framing",
-    "low camera near the ground with the source looming overhead",
-    "close flash snapshot with harsh shadows on the wall behind",
-    "long hallway perspective with the subject or object at the end",
-    "square cropped internet image framing with too much subject and not enough context",
-    "museum inventory angle, centered and emotionless",
-    "tabletop photography angle looking slightly down at a strange object",
+    "backlit silhouette",
+    "heroic promotional angle",
+    "school-photo style composition",
+    "slightly tilted dutch angle",
+    "macro-close detail shot",
+    "wide lens inches from the subject",
+    "museum inventory angle",
+    "tabletop product photography angle",
+    "sports-card low angle",
+    "bathroom mirror angle",
+    "backyard snapshot angle",
+    "old catalog straight-on angle",
+    "close-up from below the chin",
+    "side profile like a catalog specimen",
+    "three-quarter portrait with awkward flash",
 ]
 
 const LIGHTING_STYLES = [
-    "harsh direct flash with deep ugly shadows",
-    "soft overcast daylight with a strange calm mood",
-    "bright cheerful commercial lighting with punchy highlights",
-    "cold fluorescent lighting like a school hallway or office",
+    "harsh direct flash with ugly shadows",
+    "soft overcast daylight",
+    "bright cheerful commercial lighting",
+    "cold fluorescent school hallway lighting",
     "greenish institutional lighting",
-    "warm suburban daylight with nostalgic colors",
-    "moody single overhead bulb",
-    "backlit glowing silhouette lighting",
-    "stage-like spotlight on the subject",
-    "low-budget TV studio lighting",
-    "overexposed daylight with blown-out highlights",
-    "golden-hour sunlight that makes the absurd source look beautiful",
+    "warm suburban daylight",
+    "single overhead bulb",
+    "backlit glowing silhouette",
+    "cheap TV studio lighting",
+    "overexposed noon daylight",
+    "golden-hour sunlight",
     "aquarium-blue artificial light",
-    "flashlit nighttime scene with dark background",
-    "soft portrait-studio lighting with unsettling stillness",
+    "flashlit nighttime scene",
+    "soft portrait-studio lighting",
     "high-contrast theatrical lighting",
-    "flat catalog lighting meant to show everything clearly",
-    "bright blue sky outdoor lighting with oversized heroic perspective",
-    "bathroom mirror lighting with porcelain reflections",
-    "murky VHS lighting with gray shadows",
-    "sickly green sci-fi glow from below",
-    "toy-commercial studio lighting with glossy highlights",
-    "cheap webcam-like room lighting with low-resolution softness",
+    "flat catalog lighting",
+    "bright blue sky outdoor lighting",
+    "bathroom mirror lighting",
+    "murky VHS gray lighting",
+    "sickly sci-fi underglow",
+    "toy-commercial glossy highlights",
+    "cheap webcam room lighting",
     "hardware-store fluorescent lighting",
-    "school classroom lighting",
     "museum display-case lighting",
+    "wax museum spotlighting",
+    "school gymnasium lighting",
+    "strip-mall storefront lighting",
 ]
 
 const COLOR_MOODS = [
@@ -470,135 +645,132 @@ const COLOR_MOODS = [
     "warm orange nostalgic tones",
     "surreal candy-color palette",
     "faded analog-film colors",
-    "high-contrast black background with vivid subject color",
-    "clean product-photo whites and bold accent colors",
+    "clean product-photo whites and bold accents",
     "cheap VHS-video color response",
     "pale pastel portrait colors",
-    "hyper-bright blue sky and clean beige tones",
+    "hyper-bright blue sky and beige tones",
     "glossy green sci-fi colors",
-    "aquarium blues, coral pinks, and toilet porcelain whites",
-    "low-res internet browns and muddy indoor shadows",
-    "soft suburban brick-wall reds and corn-yellow highlights",
-    "oversaturated meme-image colors with awkward compression",
-    "bright food-ad reds, yellows, and shiny highlights",
-    "museum beige, dusty gray, and aged paper tones",
+    "aquarium blues and coral pinks",
+    "muddy indoor internet-photo browns",
+    "brick-wall reds and corn-yellow highlights",
+    "oversaturated meme-image colors",
+    "bright food-ad reds and yellows",
+    "museum beige and dusty gray",
     "primary-color toy plastic palette",
-]
-
-const OBJECT_DIRECTIONS = [
-    "make it a physical object with no face",
-    "make it a product photo with no character",
-    "make it an environment or room scene instead of a portrait",
-    "make it a strange artifact on a table",
-    "make it a handmade model or miniature set",
-    "make it a weird household object photographed seriously",
-    "make it a fake commercial product",
-    "make it a scientific specimen or archive object",
-    "make it an architectural or landscape transformation",
-    "make it a food, machine, prop, package, or display when appropriate",
-    "avoid eyes, mouth, face, or humanoid body unless the source truly supports it",
-    "avoid the same mascot-head formula; let the Wikipedia source decide the form",
-]
-
-const CHARACTER_DIRECTIONS = [
-    "only make a character if the Wikipedia source supports a person, animal, performer, mascot, or creature",
-    "if a character appears, make their silhouette and materials specific to the Wikipedia source",
-    "avoid generic bald humanoid heads",
-    "avoid repeating the same giant-eye mascot look",
-    "make the pose and costume highly specific rather than a reusable creature portrait",
-    "use a fictional performer or costume if the source is a real person",
+    "wax yellow and dusty red museum tones",
+    "neon arcade colors",
+    "faded family-album colors",
+    "loud parade-float colors",
 ]
 
 const MATERIALS = [
-    "rubber, latex, foam, vinyl, and glossy plastic",
-    "cheap fabric, cardboard, painted wood, and amateur craft materials",
-    "toy-like molded plastic and bright painted surfaces",
-    "fuzzy costume textures, fake fur, and handmade seams",
-    "smooth product-plastic surfaces and soft reflections",
-    "ceramic, porcelain, and polished household textures",
-    "beige office materials, laminate, fake leather, and fluorescent reflections",
-    "wet shiny surfaces, aquarium textures, and smooth odd skin",
-    "epoxy acrylic, glassy surfaces, shiny green plastic, synthetic material",
-    "low-resolution compressed textures, weird smoothing, meme artifacting",
-    "oversized food texture, kernels, soft flesh tones, and brick-wall background",
-    "coral reef textures, toilet porcelain, blue water light, rubber surfaces",
-    "wood, screws, chipped paint, dust, metal brackets, and handmade seams",
-    "paper labels removed, cardboard display stands, clear plastic packaging",
-    "stone, concrete, moss, old brick, landscape texture, and miniature terrain",
+    "rubber, latex, foam, vinyl",
+    "cheap fabric, cardboard, painted wood",
+    "toy-like molded plastic",
+    "fake fur and handmade seams",
+    "glossy product plastic",
+    "ceramic and porcelain",
+    "beige office laminate",
+    "wet shiny aquarium surfaces",
+    "epoxy acrylic and glassy eyes",
+    "compressed low-resolution texture",
+    "oversized food texture",
+    "coral reef textures and blue water light",
+    "wood, screws, chipped paint, dust",
+    "clear plastic packaging",
+    "stone, concrete, moss, old brick",
+    "medical mannequin plastic",
+    "hardware-store metal, hoses, buckets",
+    "papier-mâché and parade-float paint",
+    "wax museum skin",
+    "inflatable vinyl seams",
+    "clay-like handmade surface",
+    "appliance plastic and chrome",
 ]
 
-const COMPOSITION_GAGS = [
-    "place the source too close to the camera",
-    "make one part of the object or scene appear huge because of lens distortion",
-    "use too much empty space for awkward comedy",
-    "frame the source as if it is way more important than it should be",
-    "present the bizarre object or scene with absurd dignity",
-    "treat the bizarre source like it belongs in a completely normal photo",
-    "contrast a silly subject with a serious composition",
-    "make the image feel like an accidental masterpiece",
-    "pose the source in front of a plain wall as if nothing is wrong",
-    "make the camera angle make the source look unexpectedly monumental",
-    "stage it like a product demonstration gone wrong",
-    "place a bizarre object or scene in a bathroom, hallway, backyard, office, or store without explanation",
-    "make it look like a real listing photo for something nobody should own",
-    "make it look like a museum catalog image for an object nobody can explain",
+const WARDROBE_DETAILS = [
+    "oversized beige suit",
+    "cheap sports uniform",
+    "plain suburban clothes",
+    "toy mascot costume",
+    "lab coat",
+    "corporate polo shirt",
+    "old-fashioned formal wear",
+    "rubber sci-fi helmet",
+    "paper crown or parade costume",
+    "no clothing, object-only form",
+    "museum tag removed",
+    "plastic product packaging",
+    "school science fair materials",
+    "windbreaker jacket",
+    "awkward formal shirt",
+    "vintage commercial spokesperson outfit",
+    "local TV host blazer",
+    "homemade costume with visible seams",
 ]
 
-const BRIGHT_FUN_ENHANCERS = [
-    "lean into bright, cheerful colors when appropriate",
-    "allow playful, silly energy instead of always eerie energy",
-    "favor bold visual contrast and memorable shapes",
-    "make the image visually loud if the source allows it",
-    "let the humor come from the photo feeling real",
-    "make it feel like a viral image people cannot stop staring at",
-    "make it look funnier, brighter, and more specific than a generic horror image",
-    "let the absurdity be instantly readable even before someone knows the Wikipedia source",
+const POSE_DIRECTIONS = [
+    "standing proudly like a monument",
+    "sitting awkwardly at a table",
+    "caught mid-step",
+    "staring directly into the camera",
+    "posing like a product demonstration",
+    "standing too close to the lens",
+    "lying on a museum table",
+    "peeking from a doorway",
+    "posed like a family portrait",
+    "frozen in a TV interview chair",
+    "displayed like a catalog item",
+    "placed in a bathroom with no explanation",
+    "floating or staged in a miniature set",
+    "holding an object from the Wikipedia source",
+    "standing in a backyard like nothing is wrong",
+    "presenting itself like a salesman",
+    "being photographed like a strange celebrity",
 ]
 
-function chooseWeighted(options, extra = []) {
-    const pool = [...options, ...extra].filter(Boolean)
+const SOURCE_TRANSFORMERS = [
+    "use the source title to determine the silhouette",
+    "use the source image colors as color hints",
+    "turn a key object from the source summary into the main prop",
+    "make the era or profession from the summary influence the wardrobe",
+    "make the location from the summary influence the room or background",
+    "make the source category decide whether it is person, animal, object, place, or product",
+    "use two or three concrete nouns from the summary as visible physical details",
+    "avoid generic weirdness; every odd detail should connect to the source",
+    "use the Wikipedia source image as a loose color, pose, or object reference without copying it",
+    "make the background logically connect to the source topic",
+]
+
+function weightedPick(items, weightKey = "weightForPeople") {
+    const pool = []
+
+    for (const item of items) {
+        const weight = Math.max(1, Number(item?.[weightKey] || 1))
+        for (let i = 0; i < weight; i++) pool.push(item)
+    }
+
     return pick(pool)
 }
 
 function chooseFormMode(profile) {
-    const extras = []
-
     if (profile.isPerson) {
-        extras.push(
-            FORM_MODES.find((x) => x.name === "Human Portrait / Meme Photo"),
-            FORM_MODES.find((x) => x.name === "Mascot / Costume / Performer"),
-            FORM_MODES.find((x) => x.name === "Room / Environment Scene")
-        )
+        return weightedPick(FORM_MODES, "weightForPeople")
     }
+
+    const extras = []
 
     if (profile.isAnimal) {
         extras.push(
-            FORM_MODES.find((x) => x.name === "Animal / Field Discovery"),
-            FORM_MODES.find((x) => x.name === "Museum Object / Specimen"),
-            FORM_MODES.find((x) => x.name === "Room / Environment Scene")
+            FORM_MODES.find((x) => x.name === "Creature / Field Discovery"),
+            FORM_MODES.find((x) => x.name === "Museum Object / Specimen")
         )
     }
 
     if (profile.isPlace) {
         extras.push(
             FORM_MODES.find((x) => x.name === "Architectural / Place Photo"),
-            FORM_MODES.find((x) => x.name === "Room / Environment Scene"),
-            FORM_MODES.find((x) => x.name === "Miniature Model Set")
-        )
-    }
-
-    if (profile.isObject || profile.isMedia) {
-        extras.push(
-            FORM_MODES.find((x) => x.name === "Strange Product Photo"),
-            FORM_MODES.find((x) => x.name === "Toy / Packaging / Catalog"),
-            FORM_MODES.find((x) => x.name === "Abstract Physical Prop")
-        )
-    }
-
-    if (profile.isScience) {
-        extras.push(
-            FORM_MODES.find((x) => x.name === "Museum Object / Specimen"),
-            FORM_MODES.find((x) => x.name === "Abstract Physical Prop")
+            FORM_MODES.find((x) => x.name === "Room / Environment Scene")
         )
     }
 
@@ -609,158 +781,37 @@ function chooseFormMode(profile) {
         )
     }
 
-    if (!profile.isPerson && !profile.isAnimal) {
+    if (profile.isObject || profile.isMedia || profile.isScience) {
         extras.push(
             FORM_MODES.find((x) => x.name === "Strange Product Photo"),
-            FORM_MODES.find((x) => x.name === "Room / Environment Scene"),
             FORM_MODES.find((x) => x.name === "Museum Object / Specimen"),
-            FORM_MODES.find((x) => x.name === "Toy / Packaging / Catalog"),
-            FORM_MODES.find((x) => x.name === "Abstract Physical Prop")
+            FORM_MODES.find((x) => x.name === "Toy / Action Figure / Doll")
         )
     }
 
-    return chooseWeighted(FORM_MODES, extras)
+    return pick([...FORM_MODES, ...extras].filter(Boolean))
 }
 
 function buildStyleMix(page) {
     const profile = inferWikiProfile(page)
     const formMode = chooseFormMode(profile)
-
-    const styleWorldExtras = []
-    const angleExtras = []
-    const lightingExtras = []
-    const colorExtras = []
-    const materialExtras = []
-    const directionExtras = []
-
-    if (profile.isPerson) {
-        styleWorldExtras.push(
-            STYLE_WORLDS.find((x) => x.name === "Mall Portrait Studio"),
-            STYLE_WORLDS.find((x) => x.name === "Tabloid Shock Photo"),
-            STYLE_WORLDS.find((x) => x.name === "Heroic Giant Perspective"),
-            STYLE_WORLDS.find((x) => x.name === "Cursed Internet Meme Photo")
-        )
-        angleExtras.push(
-            "extreme low-angle portrait making the person seem absurdly powerful, only if a person is used",
-            "tight documentary close-up with unsettling human detail, only if a person is used",
-            "wide lens close-up where the face and hands become too large, only if a person is used"
-        )
-        directionExtras.push(...CHARACTER_DIRECTIONS)
-    }
-
-    if (profile.isAnimal) {
-        styleWorldExtras.push(
-            STYLE_WORLDS.find((x) => x.name === "Field Guide Discovery"),
-            STYLE_WORLDS.find((x) => x.name === "Surreal Domestic Photo"),
-            STYLE_WORLDS.find((x) => x.name === "Aquarium Bathroom Diorama"),
-            STYLE_WORLDS.find((x) => x.name === "Cursed Internet Meme Photo")
-        )
-        lightingExtras.push(
-            "wildlife-documentation lighting",
-            "bright daylight as if caught in nature or a backyard",
-            "aquarium-blue artificial light"
-        )
-        directionExtras.push(
-            "make the animal or creature form specific to the source, not a generic monster",
-            "avoid turning every animal into the same humanoid mascot"
-        )
-    }
-
-    if (profile.isObject || profile.isMedia) {
-        styleWorldExtras.push(
-            STYLE_WORLDS.find((x) => x.name === "Toy / Catalog Photo"),
-            STYLE_WORLDS.find((x) => x.name === "Museum Archive Documentation"),
-            STYLE_WORLDS.find((x) => x.name === "Bright Absurd Commercial"),
-            STYLE_WORLDS.find((x) => x.name === "Hardware Store Catalog")
-        )
-        materialExtras.push(
-            "hard glossy product surfaces and packaging-like realism",
-            "toy plastic, molded seams, bright paint, and catalog reflections"
-        )
-        directionExtras.push(...OBJECT_DIRECTIONS)
-    }
-
-    if (profile.isPlace) {
-        styleWorldExtras.push(
-            STYLE_WORLDS.find((x) => x.name === "Heroic Giant Perspective"),
-            STYLE_WORLDS.find((x) => x.name === "Bright Absurd Commercial"),
-            STYLE_WORLDS.find((x) => x.name === "Miniature Model Set")
-        )
-        angleExtras.push(
-            "dramatic wide perspective that exaggerates scale and makes the location feel absurd"
-        )
-        directionExtras.push(
-            "make it a place, room, building, model, landscape, or monument instead of a character"
-        )
-    }
-
-    if (profile.isScience) {
-        styleWorldExtras.push(
-            STYLE_WORLDS.find((x) => x.name === "Museum Archive Documentation"),
-            STYLE_WORLDS.find((x) => x.name === "Field Guide Discovery"),
-            STYLE_WORLDS.find((x) => x.name === "Low-Budget Sci-Fi Still"),
-            STYLE_WORLDS.find((x) => x.name === "School Science Fair Display")
-        )
-        directionExtras.push(
-            "make it a specimen, diagram-like physical model, apparatus, or science fair object"
-        )
-    }
-
-    if (profile.isDomestic) {
-        styleWorldExtras.push(
-            STYLE_WORLDS.find((x) => x.name === "Weird Family Snapshot"),
-            STYLE_WORLDS.find((x) => x.name === "Surreal Domestic Photo"),
-            STYLE_WORLDS.find((x) => x.name === "Cursed Internet Meme Photo")
-        )
-        lightingExtras.push(
-            "warm indoor household lighting",
-            "flashlit living-room snapshot lighting"
-        )
-    }
-
-    if (profile.isFood) {
-        styleWorldExtras.push(
-            STYLE_WORLDS.find((x) => x.name === "Food Magazine Gone Wrong"),
-            STYLE_WORLDS.find((x) => x.name === "Bright Absurd Commercial")
-        )
-        colorExtras.push(
-            "bright food-ad reds, yellows, and shiny highlights",
-            "surreal candy-color palette"
-        )
-        directionExtras.push(
-            "make it food, packaging, texture, table setting, or kitchen object rather than a character"
-        )
-    }
-
-    if (profile.isFunnyOrAbsurd) {
-        colorExtras.push(
-            "ultra-bright playful colors",
-            "ridiculous but lovable color combinations",
-            "oversaturated meme-image colors with awkward compression"
-        )
-        directionExtras.push(
-            "lean into ridiculous humor while keeping it photographic",
-            "make it silly through the situation, object, setting, or composition, not only through a face"
-        )
-    }
-
-    if (!profile.isPerson && !profile.isAnimal) {
-        directionExtras.push(...OBJECT_DIRECTIONS)
-    }
+    const characterArchetype = formMode.characterAllowed
+        ? pick(CHARACTER_ARCHETYPES)
+        : null
 
     return {
         profile,
+        anchors: extractWikiAnchors(page),
         formMode,
-        world: chooseWeighted(STYLE_WORLDS, styleWorldExtras),
-        cameraAngle: chooseWeighted(CAMERA_ANGLES, angleExtras),
-        lighting: chooseWeighted(LIGHTING_STYLES, lightingExtras),
-        colorMood: chooseWeighted(COLOR_MOODS, colorExtras),
-        materials: chooseWeighted(MATERIALS, materialExtras),
-        direction1: chooseWeighted(OBJECT_DIRECTIONS, directionExtras),
-        direction2: chooseWeighted(OBJECT_DIRECTIONS, directionExtras),
-        direction3: chooseWeighted(COMPOSITION_GAGS, directionExtras),
-        composition: pick(COMPOSITION_GAGS),
-        brightFun: pick(BRIGHT_FUN_ENHANCERS),
+        characterArchetype,
+        styleWorld: pick(STYLE_WORLDS),
+        cameraAngle: pick(CAMERA_ANGLES),
+        lighting: pick(LIGHTING_STYLES),
+        colorMood: pick(COLOR_MOODS),
+        materials: pickMany(MATERIALS, 3),
+        wardrobe: pick(WARDROBE_DETAILS),
+        pose: pick(POSE_DIRECTIONS),
+        sourceTransformer: pickMany(SOURCE_TRANSFORMERS, 3),
     }
 }
 
@@ -781,20 +832,49 @@ ${summary}
 Wikipedia image source:
 ${wikiImageUrl || "No image available"}
 
-Core instruction:
-Use the Wikipedia topic, text information, and source image as inspiration.
-The final image should be strongly shaped by what the source actually is.
-Do NOT use one generic weird character formula every time.
+Source anchors to visibly influence the image:
+${styleMix.anchors}
 
 Chosen image form:
 ${styleMix.formMode.name}
 ${styleMix.formMode.description}
 
-Visual world:
-${styleMix.world.name}
-${styleMix.world.description}
+${
+    styleMix.characterArchetype
+        ? `
+Selected character family:
+${styleMix.characterArchetype.name}
 
-Camera angle:
+Body language / body type:
+${styleMix.characterArchetype.body}
+
+Face / head design:
+${styleMix.characterArchetype.face}
+
+Mood:
+${styleMix.characterArchetype.mood}
+
+Avoid for this character:
+${styleMix.characterArchetype.avoid}
+
+Very important:
+Commit strongly to this selected character family.
+Do not blend it with the other archetypes.
+Do not use the default generic big-eyed mascot face unless this archetype specifically calls for it.
+Do not reuse the same character head shape, eye style, mouth, or body type from previous images.
+`
+        : `
+No-character rule:
+This generation should NOT become a humanoid character.
+Avoid eyes, mouth, mascot face, bald creature head, or portrait framing.
+Make the source into an object, product, room, place, food, machine, specimen, prop, package, or environment.
+`
+}
+
+Visual world:
+${styleMix.styleWorld}
+
+Camera:
 ${styleMix.cameraAngle}
 
 Lighting:
@@ -803,49 +883,27 @@ ${styleMix.lighting}
 Color mood:
 ${styleMix.colorMood}
 
-Materials / texture:
-${styleMix.materials}
+Materials:
+${styleMix.materials.join(", ")}
 
-Composition idea:
-${styleMix.composition}
+Wardrobe / surface / display detail:
+${styleMix.wardrobe}
 
-Specific variation directions:
-${styleMix.direction1}
-${styleMix.direction2}
-${styleMix.direction3}
+Pose / staging:
+${styleMix.pose}
 
-Extra energy:
-${styleMix.brightFun}
+Source-dependent transformation rules:
+${styleMix.sourceTransformer.join("\n")}
 
-Important anti-repetition rules:
-Do not default to a humanoid character.
-Do not reuse the same bald head, big eyes, tiny mouth, mascot face, or creature portrait formula.
-If the Wikipedia topic is not clearly about a person or animal, avoid making a face entirely.
-Let the subject become a scene, object, product, place, food, machine, specimen, prop, display, room, landscape, architecture, package, toy, or environment.
-Only make a person, mascot, or creature when the chosen image form and Wikipedia source support it.
-If a person appears, make it fictional and transformed, not a copy of any real person.
-If a character appears, their shape, materials, costume, and setting must be specific to the Wikipedia source, not generic.
+Super important variety rules:
+Make this image look completely different from previous generations.
+Do not reuse the same character head shape, same eye shape, same mouth, same bald mascot look, same portrait setup, or same rubber creature formula.
+If this is a character, its silhouette, face, body, costume, material, setting, and mood must come from the selected character family and the Wikipedia source.
+If this is not a character, do not sneak in a face.
 
-Use a broad range that can include:
-- strange product photography
-- weird room or environment scenes
-- museum objects and specimen photos
-- food/object close-ups
-- toy packaging and catalog photos
-- architectural/place transformations
-- field-guide discoveries
-- meme-like snapshots
-- public-access TV stills
-- bright surreal commercial photography
-- low-angle giant-perspective photos
-- fish-eye or close-lens distortion
-- domestic absurdity
-- practical effects, handmade props, and physical materials
-
-Make it look like a photographed image, not a polished digital illustration.
-It can be bright, funny, awkward, surreal, or slightly disturbing depending on the topic.
-Let the Wikipedia subject determine which direction makes the most sense.
-The image should feel like it could become a strange viral image because of its specificity.
+Make it look like a photographed image, not polished digital fantasy art.
+It can be bright, funny, awkward, surreal, colorful, domestic, commercial, documentary, toy-like, scientific, or meme-like depending on the selected style and source.
+The image should feel specific enough that it could become a strange viral image.
 
 Hard rules:
 One single image only.
@@ -861,9 +919,13 @@ No explicit violence.
 }
 
 async function fetchRandomWikipediaPage(requireImage = true) {
-    let lastPage = null
+    const preferPeople = process.env.WIKI_PEOPLE_BIAS === "0" ? false : true
+    const peopleTries = Number(process.env.WIKI_PEOPLE_TRIES || 30)
+    const fallbackTries = Number(process.env.WIKI_FALLBACK_TRIES || 12)
 
-    for (let i = 0; i < 12; i++) {
+    let lastValidPage = null
+
+    async function getRandomPage() {
         const response = await fetch(
             "https://en.wikipedia.org/api/rest_v1/page/random/summary"
         )
@@ -872,20 +934,44 @@ async function fetchRandomWikipediaPage(requireImage = true) {
             throw new Error(`Wikipedia failed: ${response.status}`)
         }
 
-        const page = await response.json()
-        lastPage = page
+        return await response.json()
+    }
 
+    function isValidPage(page) {
         const hasTitle = page?.title && !page.title.includes(":")
         const hasSummary = page?.extract && page.extract.length > 80
         const notDisambiguation = page?.type !== "disambiguation"
         const hasImage = Boolean(getWikipediaImageUrl(page))
 
-        if (hasTitle && hasSummary && notDisambiguation) {
-            if (!requireImage || hasImage) return page
+        return (
+            hasTitle &&
+            hasSummary &&
+            notDisambiguation &&
+            (!requireImage || hasImage)
+        )
+    }
+
+    if (preferPeople) {
+        for (let i = 0; i < peopleTries; i++) {
+            const page = await getRandomPage()
+
+            if (isValidPage(page)) {
+                lastValidPage = page
+
+                const profile = inferWikiProfile(page)
+                if (profile.isPerson) return page
+            }
         }
     }
 
-    return lastPage
+    for (let i = 0; i < fallbackTries; i++) {
+        const page = await getRandomPage()
+
+        if (isValidPage(page)) return page
+        if (page?.title && page?.extract) lastValidPage = page
+    }
+
+    return lastValidPage
 }
 
 async function fetchWikipediaPageFromUrl(url) {
