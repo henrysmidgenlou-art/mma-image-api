@@ -4,9 +4,12 @@ const {
     fetchRandomWikipediaPage,
     buildPromptFromPage,
     generateImageBuffer,
+    uploadImageToBlob,
     getWikipediaPageUrl,
     getWikipediaImageUrl,
     makeTicker,
+    saveRecentGeneration,
+    buildRecentItem,
 } = require("./_ramon-shared")
 
 function sendJson(res, status, data) {
@@ -107,6 +110,7 @@ module.exports = async function handler(req, res) {
     }
 
     const debug = query.debug === "1" || query.dry === "1"
+    const includeImage = query.includeImage === "1"
     const requireImage = query.requireImage === "0" ? false : true
 
     try {
@@ -132,6 +136,29 @@ module.exports = async function handler(req, res) {
                 wikiUrl,
                 ticker,
             })
+        }
+
+        let publicImageUrl = ""
+
+        try {
+            publicImageUrl = await uploadImageToBlob({
+                buffer: generated.buffer,
+                filename: `${ticker.replace("$", "")}.png`,
+                mimeType: generated.mimeType,
+            })
+        } catch {
+            publicImageUrl = ""
+        }
+
+        if (publicImageUrl) {
+            await saveRecentGeneration(
+                buildRecentItem({
+                    image: publicImageUrl,
+                    page,
+                    prompt,
+                    source: debug ? "x-random-debug" : "x-random",
+                })
+            )
         }
 
         const tweetText = `${ticker}\n${wikiUrl}`.trim()
@@ -171,12 +198,14 @@ module.exports = async function handler(req, res) {
             wikiTitle: page?.title || "",
             wikiUrl,
             wikiImageUrl,
+            imageGenerated: true,
+            imageUrl: publicImageUrl || null,
             model: generated.model,
             size: generated.size,
             quality: generated.quality,
             styleWorld: styleMix?.world?.name || "",
             prompt,
-            image: debug
+            image: includeImage
                 ? `data:${generated.mimeType};base64,${generated.b64}`
                 : undefined,
         })
