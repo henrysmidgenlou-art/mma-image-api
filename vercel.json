@@ -1,0 +1,10 @@
+{
+  "functions": {
+    "api/x-random.js": {
+      "maxDuration": 300
+    },
+    "api/generate.js": {
+      "maxDuration": 300
+    }
+  }
+}
