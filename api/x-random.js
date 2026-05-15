@@ -5,23 +5,21 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const twitterClient = new TwitterApi({
-  appKey: process.env.X_API_KEY || process.env.TWITTER_API_KEY,
-  appSecret: process.env.X_API_SECRET || process.env.TWITTER_API_SECRET,
-  accessToken: process.env.X_ACCESS_TOKEN || process.env.TWITTER_ACCESS_TOKEN,
-  accessSecret: process.env.X_ACCESS_SECRET || process.env.TWITTER_ACCESS_SECRET,
-}).readWrite;
-
-// You can change these in Vercel/GitHub env vars later.
 const IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1";
-const PROMPT_MODEL = process.env.OPENAI_PROMPT_MODEL || "gpt-4.1-mini";
-
 const IMAGE_SIZE = process.env.IMAGE_SIZE || "1536x1024";
 const IMAGE_QUALITY = process.env.IMAGE_QUALITY || "medium";
 const IMAGE_FORMAT = process.env.IMAGE_FORMAT || "jpeg";
 
 const REQUIRE_WIKI_IMAGE = process.env.REQUIRE_WIKI_IMAGE !== "false";
-const DRY_RUN = process.env.DRY_RUN === "true";
+
+function getTwitterClient() {
+  return new TwitterApi({
+    appKey: process.env.X_API_KEY || process.env.TWITTER_API_KEY,
+    appSecret: process.env.X_API_SECRET || process.env.TWITTER_API_SECRET,
+    accessToken: process.env.X_ACCESS_TOKEN || process.env.TWITTER_ACCESS_TOKEN,
+    accessSecret: process.env.X_ACCESS_SECRET || process.env.TWITTER_ACCESS_SECRET,
+  }).readWrite;
+}
 
 function pick(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
@@ -54,7 +52,7 @@ const STYLE_PROMPTS = [
   "body-horror inspired practical makeup photo, non-graphic, distorted features, prosthetic transformation, vintage film still",
   "inflatable latex-like surrealism, glossy artificial skin, strange air-filled shapes, direct flash realism",
   "black-and-white psychological portrait, huge uncanny eyes, theatrical shadows, old archive photograph",
-  "bright surreal 1960s color photograph, playful but disturbing props, strange fashion, soft faded film grain"
+  "bright surreal 1960s color photograph, playful but disturbing props, strange fashion, soft faded film grain",
 ];
 
 const CAMERA_ANGLES = [
@@ -67,7 +65,7 @@ const CAMERA_ANGLES = [
   "side-profile angle with the subject staring past the camera",
   "low ringside angle like a fight photographer is crouched near the mat",
   "awkward point-and-shoot snapshot angle with imperfect composition",
-  "slightly tilted frame, as if from an old disposable camera"
+  "slightly tilted frame, as if from an old disposable camera",
 ];
 
 const LENS_TYPES = [
@@ -75,12 +73,12 @@ const LENS_TYPES = [
   "28mm documentary lens",
   "35mm point-and-shoot lens",
   "50mm vintage portrait lens",
-  "fisheye-adjacent wide lens, subtle distortion",
+  "fisheye-adjacent wide lens with subtle distortion",
   "cheap disposable camera lens",
   "old flash-camera lens with slight softness",
   "soft telephoto portrait lens",
   "grainy VHS-era still-photo look",
-  "macro-like close-up lens for unsettling detail"
+  "macro-like close-up lens for unsettling detail",
 ];
 
 const LIGHTING_STYLES = [
@@ -95,7 +93,7 @@ const LIGHTING_STYLES = [
   "single bare bulb lighting from above",
   "bright 1960s studio lighting with soft shadows",
   "overexposed flash reflection on glossy surfaces",
-  "moody underlit horror-movie lighting, but still photographic"
+  "moody underlit horror-movie lighting, but still photographic",
 ];
 
 const COLOR_GRADES = [
@@ -110,7 +108,7 @@ const COLOR_GRADES = [
   "high-contrast black-and-white archive photo",
   "slightly magenta expired-film color shift",
   "sun-bleached outdoor color palette",
-  "dark red stage-light color cast"
+  "dark red stage-light color cast",
 ];
 
 const SETTINGS = [
@@ -128,7 +126,7 @@ const SETTINGS = [
   "a motel room with bad lighting",
   "a concrete hallway under fluorescent lights",
   "an outdoor field at dusk",
-  "a basement training space"
+  "a basement training space",
 ];
 
 const WEIRDNESS_MODIFIERS = [
@@ -145,7 +143,7 @@ const WEIRDNESS_MODIFIERS = [
   "make it unsettling without blood, gore, or graphic injury",
   "use physical props that look handmade and low-budget",
   "make the pose stiff, awkward, and deadpan",
-  "make the image feel like an old archive photo nobody can explain"
+  "make the image feel like an old archive photo nobody can explain",
 ];
 
 const TEXTURE_MODIFIERS = [
@@ -160,57 +158,8 @@ const TEXTURE_MODIFIERS = [
   "dusty museum-object surfaces",
   "sweaty fight-gear leather",
   "muddy preserved-earth texture",
-  "cheap plastic helmet reflections"
+  "cheap plastic helmet reflections",
 ];
-
-async function fetchRandomWikipediaPage() {
-  let lastPage = null;
-
-  for (let i = 0; i < 10; i++) {
-    const response = await fetch("https://en.wikipedia.org/api/rest_v1/page/random/summary", {
-      headers: {
-        "User-Agent": "random-mma-wiki-bot/1.0",
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`Wikipedia request failed: ${response.status}`);
-    }
-
-    const page = await response.json();
-    lastPage = page;
-
-    const hasTitle = page.title && !page.title.includes(":");
-    const hasSummary = page.extract && page.extract.length > 80;
-    const isNotDisambiguation = page.type !== "disambiguation";
-    const imageUrl = getWikipediaImageUrl(page);
-
-    if (hasTitle && hasSummary && isNotDisambiguation) {
-      if (!REQUIRE_WIKI_IMAGE || imageUrl) {
-        return page;
-      }
-    }
-  }
-
-  return lastPage;
-}
-
-function getWikipediaImageUrl(page) {
-  return (
-    page.originalimage?.source ||
-    page.thumbnail?.source ||
-    null
-  );
-}
-
-function getWikipediaPageUrl(page) {
-  return (
-    page.content_urls?.desktop?.page ||
-    page.content_urls?.mobile?.page ||
-    page.url ||
-    `https://en.wikipedia.org/wiki/${encodeURIComponent(page.title.replaceAll(" ", "_"))}`
-  );
-}
 
 function buildStyleMix() {
   return {
@@ -225,11 +174,107 @@ function buildStyleMix() {
   };
 }
 
-async function buildImagePromptWithAI({ page, imageUrl, styleMix }) {
+function getWikipediaImageUrl(page) {
+  return page?.originalimage?.source || page?.thumbnail?.source || null;
+}
+
+function getWikipediaPageUrl(page) {
+  return (
+    page?.content_urls?.desktop?.page ||
+    page?.content_urls?.mobile?.page ||
+    page?.url ||
+    `https://en.wikipedia.org/wiki/${encodeURIComponent(
+      String(page?.title || "Random").replaceAll(" ", "_")
+    )}`
+  );
+}
+
+async function fetchRandomWikipediaPage() {
+  let lastGoodPage = null;
+
+  for (let i = 0; i < 15; i++) {
+    const response = await fetch(
+      "https://en.wikipedia.org/api/rest_v1/page/random/summary",
+      {
+        headers: {
+          "User-Agent": "weird-wiki-fight-bot/1.0",
+        },
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Wikipedia request failed with status ${response.status}`);
+    }
+
+    const page = await response.json();
+
+    const hasTitle = page?.title && !page.title.includes(":");
+    const hasSummary = page?.extract && page.extract.length > 80;
+    const notDisambiguation = page?.type !== "disambiguation";
+    const hasImage = Boolean(getWikipediaImageUrl(page));
+
+    if (hasTitle && hasSummary && notDisambiguation) {
+      lastGoodPage = page;
+
+      if (!REQUIRE_WIKI_IMAGE || hasImage) {
+        return page;
+      }
+    }
+  }
+
+  if (lastGoodPage) return lastGoodPage;
+
+  throw new Error("Could not find a usable random Wikipedia page.");
+}
+
+function makeTickerFromTitle(title) {
+  const blacklist = new Set([
+    "the",
+    "a",
+    "an",
+    "of",
+    "and",
+    "or",
+    "in",
+    "on",
+    "at",
+    "to",
+    "for",
+    "from",
+    "by",
+    "with",
+  ]);
+
+  const clean = String(title || "WIKI")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9 ]/g, " ");
+
+  const words = clean
+    .split(/\s+/)
+    .map((w) => w.trim())
+    .filter(Boolean);
+
+  const picked =
+    words.find((w) => !blacklist.has(w.toLowerCase()) && w.length > 1) ||
+    words[0] ||
+    "WIKI";
+
+  return picked.toUpperCase().slice(0, 12);
+}
+
+function buildPostText(page) {
+  const ticker = makeTickerFromTitle(page.title);
   const wikiUrl = getWikipediaPageUrl(page);
 
-  const promptText = `
-You are writing ONE final image-generation prompt for a weird random Wikipedia image bot.
+  return `$${ticker}\n${wikiUrl}`;
+}
+
+function buildImagePrompt(page, styleMix) {
+  const wikiImageUrl = getWikipediaImageUrl(page);
+
+  return `
+Create ONE single standalone bizarre analog photograph inspired by this Wikipedia subject.
 
 Wikipedia topic:
 ${page.title}
@@ -237,88 +282,12 @@ ${page.title}
 Wikipedia summary:
 ${page.extract}
 
-Wikipedia URL:
-${wikiUrl}
+Wikipedia source image:
+${wikiImageUrl || "No source image available"}
 
-Random visual mix to include:
-- Style: ${styleMix.style}
-- Camera angle: ${styleMix.cameraAngle}
-- Lens: ${styleMix.lens}
-- Lighting: ${styleMix.lighting}
-- Color grade: ${styleMix.colorGrade}
-- Setting: ${styleMix.setting}
-- Weirdness: ${styleMix.weirdness.join("; ")}
-- Textures: ${styleMix.textures.join("; ")}
-
-Use the attached Wikipedia image as the source subject inspiration.
-Do not copy it exactly. Transform the main subject into a much weirder analog-photo version.
-
-Write only the final image prompt.
-Do not add quotes.
-Do not add explanation.
-
-Important rules for the final image prompt:
-- It must describe ONE single standalone photograph.
-- No collage.
-- No triptych.
-- No split-screen.
-- No panels.
-- No labels.
-- No captions.
-- No readable text anywhere in the image.
-- No logos.
-- No watermarks.
-- Make it look like a real analog photograph, not a digital illustration.
-- Keep the Wikipedia subject somewhat recognizable.
-- If the Wikipedia topic is a real person, do not recreate their exact face or likeness; use a fictional generic performer inspired by the topic instead.
-- Keep it weird, surreal, awkward, unsettling, and funny in a disturbing way.
-- Use practical effects, masks, costumes, prosthetics, inflatables, props, fake skin, rubber, latex, foam, or handmade creature effects.
-- No gore, no graphic injury, no explicit violence.
-`;
-
-  const inputContent = [
-    {
-      type: "input_text",
-      text: promptText,
-    },
-  ];
-
-  if (imageUrl) {
-    inputContent.push({
-      type: "input_image",
-      image_url: imageUrl,
-      detail: "low",
-    });
-  }
-
-  const response = await openai.responses.create({
-    model: PROMPT_MODEL,
-    input: [
-      {
-        role: "user",
-        content: inputContent,
-      },
-    ],
-    max_output_tokens: 900,
-  });
-
-  const finalPrompt = response.output_text?.trim();
-
-  if (!finalPrompt) {
-    throw new Error("Prompt model returned no image prompt.");
-  }
-
-  return addHardNoTextRules(finalPrompt);
-}
-
-function buildFallbackImagePrompt({ page, styleMix }) {
-  return addHardNoTextRules(`
-Create one single bizarre analog photograph inspired by the Wikipedia topic "${page.title}."
-
-Wikipedia summary:
-${page.extract}
-
-Reimagine the subject as a weird physical scene in ${styleMix.setting}. Keep the subject somewhat recognizable, but make it much stranger, uncanny, awkward, and surreal.
+Use the Wikipedia topic and its source image idea as inspiration for the subject.
+Do not copy the Wikipedia image exactly.
+Transform the subject into a much weirder physical, uncanny, surreal version while keeping it somewhat recognizable.
 
 Visual style:
 ${styleMix.style}
@@ -329,63 +298,76 @@ ${styleMix.cameraAngle}, ${styleMix.lens}
 Lighting and color:
 ${styleMix.lighting}, ${styleMix.colorGrade}
 
+Setting:
+${styleMix.setting}
+
 Weirdness:
 ${styleMix.weirdness.join(". ")}
 
 Textures:
 ${styleMix.textures.join(", ")}
 
-Make it feel like a real vintage found photograph from the 1960s through 1990s. Use practical effects, masks, prosthetics, strange costumes, rubber, latex, foam, handmade props, awkward posing, film grain, soft focus, faded colors, and deadpan documentary realism.
+Make it look like a real analog photograph from the 1960s through 1990s.
+Use practical effects, masks, prosthetics, strange costumes, rubber, latex, foam, handmade props, awkward posing, film grain, soft focus, faded colors, direct flash, and deadpan documentary realism.
 
-If the Wikipedia topic is a real person, do not recreate their exact face or likeness. Use a fictional generic performer inspired by the topic instead.
-
-No gore. No graphic injury. No explicit violence.
-`);
-}
-
-function addHardNoTextRules(prompt) {
-  return `
-${prompt}
+If the Wikipedia topic is a real person, do not recreate their exact face or likeness.
+Use a fictional generic performer inspired by the topic instead.
 
 ABSOLUTE IMAGE RULES:
-This must be ONE single standalone photograph.
+This must be ONE single image only.
 Do not create a collage.
 Do not create a triptych.
-Do not create a contact sheet.
 Do not create panels.
 Do not create side-by-side images.
 Do not add labels.
 Do not add captions.
 Do not add title text.
 Do not add numbers.
-Do not add any readable text anywhere.
+Do not add readable text anywhere.
 Do not add logos.
 Do not add watermarks.
 Do not add borders.
-`;
+No gore.
+No graphic injury.
+No explicit violence.
+No cartoon style.
+No polished digital fantasy art.
+`.trim();
 }
 
-async function generateImageBuffer(imagePrompt) {
+async function generateImageBuffer(prompt) {
   const result = await openai.images.generate({
     model: IMAGE_MODEL,
-    prompt: imagePrompt,
+    prompt,
     size: IMAGE_SIZE,
     quality: IMAGE_QUALITY,
     n: 1,
     output_format: IMAGE_FORMAT,
-    output_compression: 85,
   });
 
-  const b64 = result.data?.[0]?.b64_json;
+  const image = result?.data?.[0];
 
-  if (!b64) {
-    throw new Error("No image data returned from OpenAI.");
+  if (image?.b64_json) {
+    return Buffer.from(image.b64_json, "base64");
   }
 
-  return Buffer.from(b64, "base64");
+  if (image?.url) {
+    const imageResponse = await fetch(image.url);
+
+    if (!imageResponse.ok) {
+      throw new Error(`Could not download generated image: ${imageResponse.status}`);
+    }
+
+    const arrayBuffer = await imageResponse.arrayBuffer();
+    return Buffer.from(arrayBuffer);
+  }
+
+  throw new Error("No image data returned from OpenAI.");
 }
 
 async function uploadImageToX(imageBuffer) {
+  const twitterClient = getTwitterClient();
+
   const mimeType = IMAGE_FORMAT === "png" ? "image/png" : "image/jpeg";
 
   const mediaId = await twitterClient.v1.uploadMedia(imageBuffer, {
@@ -395,21 +377,8 @@ async function uploadImageToX(imageBuffer) {
   return mediaId;
 }
 
-function buildPostText(page) {
-  const wikiUrl = getWikipediaPageUrl(page);
-  const title = page.title || "Random Wikipedia Subject";
-
-  let text = `Weird Wiki Fight Photo\n\n${title}\n${wikiUrl}`;
-
-  if (text.length > 275) {
-    const shortTitle = title.slice(0, 80).trim();
-    text = `Weird Wiki Fight Photo\n\n${shortTitle}\n${wikiUrl}`;
-  }
-
-  return text;
-}
-
-async function postToX({ text, imageBuffer }) {
+async function postToX(text, imageBuffer) {
+  const twitterClient = getTwitterClient();
   const mediaId = await uploadImageToX(imageBuffer);
 
   const tweet = await twitterClient.v2.tweet({
@@ -422,47 +391,76 @@ async function postToX({ text, imageBuffer }) {
   return tweet;
 }
 
-async function runBot() {
-  const page = await fetchRandomWikipediaPage();
-  const imageUrl = getWikipediaImageUrl(page);
-  const wikiUrl = getWikipediaPageUrl(page);
-  const styleMix = buildStyleMix();
+function checkRequiredEnvVars({ needsX }) {
+  const missing = [];
 
-  let imagePrompt;
+  if (!process.env.OPENAI_API_KEY) missing.push("OPENAI_API_KEY");
 
-  try {
-    imagePrompt = await buildImagePromptWithAI({
-      page,
-      imageUrl,
-      styleMix,
-    });
-  } catch (promptError) {
-    console.warn("AI prompt builder failed. Using fallback prompt.", promptError);
-    imagePrompt = buildFallbackImagePrompt({
-      page,
-      styleMix,
-    });
+  if (needsX) {
+    if (!process.env.X_API_KEY && !process.env.TWITTER_API_KEY) {
+      missing.push("X_API_KEY");
+    }
+
+    if (!process.env.X_API_SECRET && !process.env.TWITTER_API_SECRET) {
+      missing.push("X_API_SECRET");
+    }
+
+    if (!process.env.X_ACCESS_TOKEN && !process.env.TWITTER_ACCESS_TOKEN) {
+      missing.push("X_ACCESS_TOKEN");
+    }
+
+    if (!process.env.X_ACCESS_SECRET && !process.env.TWITTER_ACCESS_SECRET) {
+      missing.push("X_ACCESS_SECRET");
+    }
   }
 
-  const imageBuffer = await generateImageBuffer(imagePrompt);
+  if (missing.length) {
+    throw new Error(`Missing env vars: ${missing.join(", ")}`);
+  }
+}
+
+async function runBot({ debug = false, skipImage = false }) {
+  const page = await fetchRandomWikipediaPage();
+  const styleMix = buildStyleMix();
+  const imagePrompt = buildImagePrompt(page, styleMix);
   const postText = buildPostText(page);
+  const wikiUrl = getWikipediaPageUrl(page);
+  const wikiImageUrl = getWikipediaImageUrl(page);
+
+  if (skipImage) {
+    return {
+      ok: true,
+      debug,
+      skippedImage: true,
+      posted: false,
+      wikiTitle: page.title,
+      wikiUrl,
+      wikiImageUrl,
+      postText,
+      imagePrompt,
+      styleMix,
+    };
+  }
+
+  checkRequiredEnvVars({ needsX: !debug });
+
+  const imageBuffer = await generateImageBuffer(imagePrompt);
 
   let tweet = null;
 
-  if (!DRY_RUN) {
-    tweet = await postToX({
-      text: postText,
-      imageBuffer,
-    });
+  if (!debug) {
+    tweet = await postToX(postText, imageBuffer);
   }
 
   return {
     ok: true,
-    dryRun: DRY_RUN,
+    debug,
+    posted: !debug,
     wikiTitle: page.title,
     wikiUrl,
-    wikiImageUrl: imageUrl,
+    wikiImageUrl,
     postText,
+    imageBytes: imageBuffer.length,
     imagePrompt,
     styleMix,
     tweet,
@@ -471,18 +469,30 @@ async function runBot() {
 
 module.exports = async function handler(req, res) {
   try {
-    const secretFromRequest =
-      req.query?.secret ||
-      req.headers?.["x-cron-secret"];
+    const query = req.query || {};
 
-    if (process.env.CRON_SECRET && secretFromRequest !== process.env.CRON_SECRET) {
-      return res.status(401).json({
-        ok: false,
-        error: "Unauthorized. Missing or incorrect cron secret.",
-      });
+    const secretFromRequest =
+      query.secret || req.headers["x-cron-secret"] || req.headers["authorization"];
+
+    if (process.env.CRON_SECRET) {
+      const expectedA = process.env.CRON_SECRET;
+      const expectedB = `Bearer ${process.env.CRON_SECRET}`;
+
+      if (secretFromRequest !== expectedA && secretFromRequest !== expectedB) {
+        return res.status(401).json({
+          ok: false,
+          error: "Unauthorized. Missing or incorrect cron secret.",
+        });
+      }
     }
 
-    const result = await runBot();
+    const debug = query.debug === "1" || query.dry === "1";
+    const skipImage = query.skipImage === "1" || query.promptOnly === "1";
+
+    const result = await runBot({
+      debug,
+      skipImage,
+    });
 
     return res.status(200).json(result);
   } catch (error) {
@@ -491,6 +501,10 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({
       ok: false,
       error: error.message || "Unknown error",
+      stack:
+        process.env.NODE_ENV !== "production"
+          ? error.stack
+          : undefined,
     });
   }
 };
