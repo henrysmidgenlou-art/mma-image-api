@@ -1,10 +1,9 @@
 {
-  "name": "ramon-ai",
+  "name": "mma-image-api",
   "version": "1.0.0",
   "private": true,
   "type": "commonjs",
   "dependencies": {
-    "openai": "latest",
-    "twitter-api-v2": "latest"
+    "openai": "latest"
   }
 }
