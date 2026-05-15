@@ -6,11 +6,17 @@ const openai = new OpenAI({
 });
 
 const IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1";
+const PROMPT_MODEL = process.env.OPENAI_PROMPT_MODEL || "gpt-4.1-mini";
+
 const IMAGE_SIZE = process.env.IMAGE_SIZE || "1536x1024";
 const IMAGE_QUALITY = process.env.IMAGE_QUALITY || "medium";
 const IMAGE_FORMAT = process.env.IMAGE_FORMAT || "jpeg";
 
 const REQUIRE_WIKI_IMAGE = process.env.REQUIRE_WIKI_IMAGE !== "false";
+
+// This is the new optional mode.
+// Set USE_AI_PROMPT_BUILDER=false in Vercel if you want to turn it off.
+const USE_AI_PROMPT_BUILDER = process.env.USE_AI_PROMPT_BUILDER !== "false";
 
 function getTwitterClient() {
   return new TwitterApi({
@@ -270,10 +276,37 @@ function buildPostText(page) {
   return `$${ticker}\n${wikiUrl}`;
 }
 
-function buildImagePrompt(page, styleMix) {
+function addHardNoTextRules(prompt) {
+  return `
+${prompt}
+
+ABSOLUTE IMAGE RULES:
+This must be ONE single standalone photograph.
+Do not create a collage.
+Do not create a triptych.
+Do not create a contact sheet.
+Do not create panels.
+Do not create side-by-side images.
+Do not add labels.
+Do not add captions.
+Do not add title text.
+Do not add numbers.
+Do not add any readable text anywhere.
+Do not add logos.
+Do not add watermarks.
+Do not add borders.
+No gore.
+No graphic injury.
+No explicit violence.
+No cartoon style.
+No polished digital fantasy art.
+`.trim();
+}
+
+function buildFallbackImagePrompt(page, styleMix) {
   const wikiImageUrl = getWikipediaImageUrl(page);
 
-  return `
+  return addHardNoTextRules(`
 Create ONE single standalone bizarre analog photograph inspired by this Wikipedia subject.
 
 Wikipedia topic:
@@ -312,27 +345,96 @@ Use practical effects, masks, prosthetics, strange costumes, rubber, latex, foam
 
 If the Wikipedia topic is a real person, do not recreate their exact face or likeness.
 Use a fictional generic performer inspired by the topic instead.
+`);
+}
 
-ABSOLUTE IMAGE RULES:
-This must be ONE single image only.
-Do not create a collage.
-Do not create a triptych.
-Do not create panels.
-Do not create side-by-side images.
-Do not add labels.
-Do not add captions.
-Do not add title text.
-Do not add numbers.
-Do not add readable text anywhere.
-Do not add logos.
-Do not add watermarks.
-Do not add borders.
-No gore.
-No graphic injury.
-No explicit violence.
-No cartoon style.
-No polished digital fantasy art.
-`.trim();
+async function buildImagePromptWithAI(page, styleMix) {
+  const wikiImageUrl = getWikipediaImageUrl(page);
+  const wikiUrl = getWikipediaPageUrl(page);
+
+  const promptBuilderInstructions = `
+You are writing ONE final image-generation prompt for a weird random Wikipedia MMA image bot.
+
+Wikipedia topic:
+${page.title}
+
+Wikipedia summary:
+${page.extract}
+
+Wikipedia URL:
+${wikiUrl}
+
+Random visual mix to include:
+- Style: ${styleMix.style}
+- Camera angle: ${styleMix.cameraAngle}
+- Lens: ${styleMix.lens}
+- Lighting: ${styleMix.lighting}
+- Color grade: ${styleMix.colorGrade}
+- Setting: ${styleMix.setting}
+- Weirdness: ${styleMix.weirdness.join("; ")}
+- Textures: ${styleMix.textures.join("; ")}
+
+Use the Wikipedia image as source inspiration when available.
+Do not copy the image exactly.
+Transform the main subject into a much weirder analog-photo version.
+
+Write only the final image prompt.
+Do not add quotes.
+Do not add explanation.
+
+Important rules for the final image prompt:
+- It must describe ONE single standalone photograph.
+- No collage.
+- No triptych.
+- No split-screen.
+- No panels.
+- No labels.
+- No captions.
+- No readable text anywhere in the image.
+- No logos.
+- No watermarks.
+- Make it look like a real analog photograph, not a digital illustration.
+- Keep the Wikipedia subject somewhat recognizable.
+- If the Wikipedia topic is a real person, do not recreate their exact face or likeness; use a fictional generic performer inspired by the topic instead.
+- Keep it weird, surreal, awkward, unsettling, and funny in a disturbing way.
+- Use practical effects, masks, costumes, prosthetics, inflatables, props, fake skin, rubber, latex, foam, or handmade creature effects.
+- Keep a loose MMA / underground fight-night feeling when it fits naturally.
+- No gore, no graphic injury, no explicit violence.
+`;
+
+  const content = [
+    {
+      type: "input_text",
+      text: promptBuilderInstructions,
+    },
+  ];
+
+  if (wikiImageUrl) {
+    content.push({
+      type: "input_image",
+      image_url: wikiImageUrl,
+      detail: "low",
+    });
+  }
+
+  const response = await openai.responses.create({
+    model: PROMPT_MODEL,
+    input: [
+      {
+        role: "user",
+        content,
+      },
+    ],
+    max_output_tokens: 900,
+  });
+
+  const finalPrompt = response.output_text?.trim();
+
+  if (!finalPrompt) {
+    throw new Error("AI prompt builder returned no prompt.");
+  }
+
+  return addHardNoTextRules(finalPrompt);
 }
 
 async function generateImageBuffer(prompt) {
@@ -355,7 +457,9 @@ async function generateImageBuffer(prompt) {
     const imageResponse = await fetch(image.url);
 
     if (!imageResponse.ok) {
-      throw new Error(`Could not download generated image: ${imageResponse.status}`);
+      throw new Error(
+        `Could not download generated image: ${imageResponse.status}`
+      );
     }
 
     const arrayBuffer = await imageResponse.arrayBuffer();
@@ -391,10 +495,14 @@ async function postToX(text, imageBuffer) {
   return tweet;
 }
 
-function checkRequiredEnvVars({ needsX }) {
+function checkRequiredEnvVars({ needsX, needsPromptBuilder }) {
   const missing = [];
 
   if (!process.env.OPENAI_API_KEY) missing.push("OPENAI_API_KEY");
+
+  if (needsPromptBuilder && !process.env.OPENAI_API_KEY) {
+    missing.push("OPENAI_API_KEY");
+  }
 
   if (needsX) {
     if (!process.env.X_API_KEY && !process.env.TWITTER_API_KEY) {
@@ -415,17 +523,41 @@ function checkRequiredEnvVars({ needsX }) {
   }
 
   if (missing.length) {
-    throw new Error(`Missing env vars: ${missing.join(", ")}`);
+    throw new Error(`Missing env vars: ${[...new Set(missing)].join(", ")}`);
   }
 }
 
 async function runBot({ debug = false, skipImage = false }) {
+  checkRequiredEnvVars({
+    needsX: !debug && !skipImage,
+    needsPromptBuilder: USE_AI_PROMPT_BUILDER,
+  });
+
   const page = await fetchRandomWikipediaPage();
   const styleMix = buildStyleMix();
-  const imagePrompt = buildImagePrompt(page, styleMix);
+
   const postText = buildPostText(page);
   const wikiUrl = getWikipediaPageUrl(page);
   const wikiImageUrl = getWikipediaImageUrl(page);
+
+  let imagePrompt;
+  let promptBuilderUsed = false;
+  let promptBuilderFailed = false;
+  let promptBuilderError = null;
+
+  if (USE_AI_PROMPT_BUILDER) {
+    try {
+      imagePrompt = await buildImagePromptWithAI(page, styleMix);
+      promptBuilderUsed = true;
+    } catch (error) {
+      console.warn("AI prompt builder failed. Falling back.", error);
+      promptBuilderFailed = true;
+      promptBuilderError = error.message || "Prompt builder failed.";
+      imagePrompt = buildFallbackImagePrompt(page, styleMix);
+    }
+  } else {
+    imagePrompt = buildFallbackImagePrompt(page, styleMix);
+  }
 
   if (skipImage) {
     return {
@@ -433,6 +565,10 @@ async function runBot({ debug = false, skipImage = false }) {
       debug,
       skippedImage: true,
       posted: false,
+      promptBuilderEnabled: USE_AI_PROMPT_BUILDER,
+      promptBuilderUsed,
+      promptBuilderFailed,
+      promptBuilderError,
       wikiTitle: page.title,
       wikiUrl,
       wikiImageUrl,
@@ -441,8 +577,6 @@ async function runBot({ debug = false, skipImage = false }) {
       styleMix,
     };
   }
-
-  checkRequiredEnvVars({ needsX: !debug });
 
   const imageBuffer = await generateImageBuffer(imagePrompt);
 
@@ -456,6 +590,10 @@ async function runBot({ debug = false, skipImage = false }) {
     ok: true,
     debug,
     posted: !debug,
+    promptBuilderEnabled: USE_AI_PROMPT_BUILDER,
+    promptBuilderUsed,
+    promptBuilderFailed,
+    promptBuilderError,
     wikiTitle: page.title,
     wikiUrl,
     wikiImageUrl,
@@ -472,7 +610,9 @@ module.exports = async function handler(req, res) {
     const query = req.query || {};
 
     const secretFromRequest =
-      query.secret || req.headers["x-cron-secret"] || req.headers["authorization"];
+      query.secret ||
+      req.headers["x-cron-secret"] ||
+      req.headers["authorization"];
 
     if (process.env.CRON_SECRET) {
       const expectedA = process.env.CRON_SECRET;
@@ -501,10 +641,7 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({
       ok: false,
       error: error.message || "Unknown error",
-      stack:
-        process.env.NODE_ENV !== "production"
-          ? error.stack
-          : undefined,
+      stack: process.env.NODE_ENV !== "production" ? error.stack : undefined,
     });
   }
 };
