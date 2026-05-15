@@ -5,6 +5,12 @@
     },
     "api/generate.js": {
       "maxDuration": 300
+    },
+    "api/random-generate.js": {
+      "maxDuration": 300
+    },
+    "api/recent-generations.js": {
+      "maxDuration": 60
     }
   }
 }
