@@ -22,7 +22,9 @@ function getQuery(req) {
 }
 
 function isAuthorized(req, query) {
-    if (!process.env.CRON_SECRET) return true
+    const cronSecret = process.env.CRON_SECRET || process.env.BOT_SECRET
+
+    if (!cronSecret) return true
 
     const supplied =
         query.secret ||
@@ -30,7 +32,7 @@ function isAuthorized(req, query) {
         req.headers["x-cron-secret"] ||
         req.headers["authorization"]?.replace(/^Bearer\s+/i, "")
 
-    return supplied === process.env.CRON_SECRET
+    return supplied === cronSecret
 }
 
 function getTwitterClient() {
