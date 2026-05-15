@@ -22,7 +22,10 @@ function getQuery(req) {
 }
 
 function isAuthorized(req, query) {
-    const cronSecret = process.env.CRON_SECRET || process.env.BOT_SECRET
+    const cronSecret =
+        process.env.CRON_SECRET ||
+        process.env.BOT_SECRET ||
+        process.env.X_BOT_SECRET
 
     if (!cronSecret) return true
 
@@ -32,7 +35,7 @@ function isAuthorized(req, query) {
         req.headers["x-cron-secret"] ||
         req.headers["authorization"]?.replace(/^Bearer\s+/i, "")
 
-    return supplied === cronSecret
+    return String(supplied || "").trim() === String(cronSecret || "").trim()
 }
 
 function getTwitterClient() {
@@ -72,6 +75,20 @@ async function postToX({ text, imageBuffer }) {
     return tweet
 }
 
+function describeError(error) {
+    return {
+        message:
+            error?.data?.detail ||
+            error?.data?.error ||
+            error?.response?.data?.detail ||
+            error?.response?.data?.error ||
+            error?.message ||
+            "Unknown error",
+        code: error?.code || error?.response?.status || null,
+        details: error?.data || error?.response?.data || null,
+    }
+}
+
 module.exports = async function handler(req, res) {
     const query = getQuery(req)
 
@@ -99,17 +116,49 @@ module.exports = async function handler(req, res) {
         const ticker = makeTicker(page?.title)
         const { prompt, styleMix } = buildPromptFromPage(page)
 
-        const generated = await generateImageBuffer(prompt)
+        let generated
+        try {
+            generated = await generateImageBuffer(prompt)
+        } catch (error) {
+            const info = describeError(error)
+
+            return sendJson(res, 500, {
+                ok: false,
+                stage: "openai_image_generation",
+                error: info.message,
+                errorCode: info.code,
+                errorDetails: info.details,
+                wikiTitle: page?.title || "",
+                wikiUrl,
+                ticker,
+            })
+        }
 
         const tweetText = `${ticker}\n${wikiUrl}`.trim()
 
         let tweet = null
 
         if (!debug) {
-            tweet = await postToX({
-                text: tweetText,
-                imageBuffer: generated.buffer,
-            })
+            try {
+                tweet = await postToX({
+                    text: tweetText,
+                    imageBuffer: generated.buffer,
+                })
+            } catch (error) {
+                const info = describeError(error)
+
+                return sendJson(res, 500, {
+                    ok: false,
+                    stage: "x_posting",
+                    error: info.message,
+                    errorCode: info.code,
+                    errorDetails: info.details,
+                    wikiTitle: page?.title || "",
+                    wikiUrl,
+                    ticker,
+                    tweetText,
+                })
+            }
         }
 
         return sendJson(res, 200, {
@@ -132,9 +181,14 @@ module.exports = async function handler(req, res) {
                 : undefined,
         })
     } catch (error) {
+        const info = describeError(error)
+
         return sendJson(res, 500, {
             ok: false,
-            error: error?.message || "x-random failed.",
+            stage: "setup_or_wikipedia",
+            error: info.message,
+            errorCode: info.code,
+            errorDetails: info.details,
         })
     }
 }
