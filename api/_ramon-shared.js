@@ -1459,17 +1459,73 @@ async function fetchWikipediaPageFromUrl(url) {
         throw new Error("Could not read the Wikipedia title from that URL.")
     }
 
-    const encodedTitle = encodeURIComponent(title.replaceAll(" ", "_"))
+    const normalizedTitle = title.replaceAll(" ", "_")
+
+    const params = new URLSearchParams({
+        action: "query",
+        format: "json",
+        titles: normalizedTitle,
+        prop: "extracts|pageimages|info",
+        exintro: "1",
+        explaintext: "1",
+        inprop: "url",
+        piprop: "thumbnail|original",
+        pithumbsize: "900",
+        redirects: "1",
+        origin: "*",
+    })
 
     const response = await fetch(
-        `https://en.wikipedia.org/api/rest_v1/page/summary/${encodedTitle}`
+        `https://en.wikipedia.org/w/api.php?${params.toString()}`,
+        {
+            headers: {
+                "User-Agent":
+                    "RamonAIImageBot/1.0 (https://mma-image-api.vercel.app)",
+            },
+        }
     )
 
     if (!response.ok) {
         throw new Error(`Wikipedia page failed: ${response.status}`)
     }
 
-    return await response.json()
+    const data = await response.json()
+    const pages = Object.values(data?.query?.pages || {})
+    const page = pages.find((item) => item && item.pageid && !item.missing)
+
+    if (!page) {
+        throw new Error("Wikipedia page not found.")
+    }
+
+    return {
+        title: page.title || title,
+        extract: page.extract || "",
+        description: "",
+        type: "standard",
+        url: page.fullurl || `https://en.wikipedia.org/wiki/${normalizedTitle}`,
+        content_urls: {
+            desktop: {
+                page:
+                    page.fullurl ||
+                    `https://en.wikipedia.org/wiki/${normalizedTitle}`,
+            },
+            mobile: {
+                page:
+                    page.fullurl ||
+                    `https://en.wikipedia.org/wiki/${normalizedTitle}`,
+            },
+        },
+        thumbnail: page.thumbnail?.source
+            ? {
+                  source: page.thumbnail.source,
+              }
+            : undefined,
+        originalimage: page.original?.source
+            ? {
+                  source: page.original.source,
+              }
+            : undefined,
+    }
 }
 
 function buildPromptFromPage(page) {
