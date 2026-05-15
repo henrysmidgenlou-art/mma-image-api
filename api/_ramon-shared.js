@@ -1017,19 +1017,6 @@ async function fetchRandomWikipediaPage(requireImage = true) {
 
     return pick(validPages)
 }
-        }
-    }
-
-    for (let i = 0; i < fallbackTries; i++) {
-        const page = await getRandomPage()
-
-        if (isValidPage(page)) return page
-        if (page?.title && page?.extract) lastValidPage = page
-    }
-
-    return lastValidPage
-}
-
 async function fetchWikipediaPageFromUrl(url) {
     const title = cleanWikiTitleFromUrl(url)
 
