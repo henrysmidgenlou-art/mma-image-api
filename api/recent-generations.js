@@ -1,39 +1,43 @@
-import { getRecentGenerations } from "./_recent-store.js";
+const { getRecentGenerations } = require("./_ramon-shared")
 
-function setCorsHeaders(res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-  res.setHeader("Cache-Control", "no-store");
+function sendJson(res, status, data) {
+    res.statusCode = status
+    res.setHeader("Content-Type", "application/json")
+    res.setHeader("Cache-Control", "no-store")
+    res.end(JSON.stringify(data, null, 2))
 }
 
-export default async function handler(req, res) {
-  setCorsHeaders(res);
+module.exports = async function handler(req, res) {
+    res.setHeader("Access-Control-Allow-Origin", "*")
+    res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS")
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type")
 
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
-  }
+    if (req.method === "OPTIONS") {
+        res.statusCode = 204
+        return res.end()
+    }
 
-  if (req.method !== "GET") {
-    return res.status(405).json({
-      success: false,
-      error: "Use GET.",
-    });
-  }
+    if (req.method !== "GET") {
+        return sendJson(res, 405, {
+            ok: false,
+            error: "Use GET.",
+        })
+    }
 
-  try {
-    const generations = getRecentGenerations();
+    try {
+        const recent = await getRecentGenerations()
 
-    return res.status(200).json({
-      success: true,
-      generations,
-    });
-  } catch (error) {
-    console.error("recent-generations failed:", error);
-
-    return res.status(500).json({
-      success: false,
-      error: error.message || "Could not load recent generations.",
-    });
-  }
+        return sendJson(res, 200, {
+            ok: true,
+            recent,
+            generations: recent,
+        })
+    } catch (error) {
+        return sendJson(res, 500, {
+            ok: false,
+            error: error?.message || "Recent generations failed.",
+            recent: [],
+            generations: [],
+        })
+    }
 }
