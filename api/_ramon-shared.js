@@ -92,6 +92,7 @@ function inferWikiProfile(page) {
             "president",
             "king",
             "queen",
+            "biography",
         ]),
         isAnimal: hasAny([
             "animal",
@@ -110,6 +111,7 @@ function inferWikiProfile(page) {
             "monkey",
             "dinosaur",
             "eel",
+            "genus",
         ]),
         isPlace: hasAny([
             "city",
@@ -126,6 +128,9 @@ function inferWikiProfile(page) {
             "museum",
             "stadium",
             "temple",
+            "church",
+            "castle",
+            "station",
         ]),
         isObject: hasAny([
             "device",
@@ -143,6 +148,10 @@ function inferWikiProfile(page) {
             "telephone",
             "ship",
             "aircraft",
+            "book",
+            "album",
+            "film",
+            "software",
         ]),
         isScience: hasAny([
             "chemical",
@@ -158,6 +167,8 @@ function inferWikiProfile(page) {
             "planet",
             "galaxy",
             "specimen",
+            "mineral",
+            "molecule",
         ]),
         isDomestic: hasAny([
             "house",
@@ -171,6 +182,48 @@ function inferWikiProfile(page) {
             "food",
             "restaurant",
             "pet",
+            "clothing",
+        ]),
+        isFood: hasAny([
+            "food",
+            "dish",
+            "fruit",
+            "vegetable",
+            "meat",
+            "bread",
+            "cake",
+            "drink",
+            "restaurant",
+            "cuisine",
+            "sauce",
+            "cheese",
+        ]),
+        isEvent: hasAny([
+            "war",
+            "battle",
+            "incident",
+            "festival",
+            "ceremony",
+            "election",
+            "competition",
+            "tournament",
+            "game",
+            "show",
+            "performance",
+            "race",
+        ]),
+        isMedia: hasAny([
+            "film",
+            "television",
+            "series",
+            "album",
+            "song",
+            "novel",
+            "book",
+            "magazine",
+            "comic",
+            "video game",
+            "episode",
         ]),
         isFunnyOrAbsurd: hasAny([
             "novelty",
@@ -190,11 +243,79 @@ function inferWikiProfile(page) {
     }
 }
 
+const FORM_MODES = [
+    {
+        name: "Strange Product Photo",
+        characterAllowed: false,
+        description:
+            "do not make a character; turn the source into a bizarre physical product, prototype, appliance, toy, gadget, package, or catalog object",
+    },
+    {
+        name: "Room / Environment Scene",
+        characterAllowed: false,
+        description:
+            "do not make a character; turn the source into a strange room, staged environment, hallway, office, bathroom, bedroom, gym, or miniature set",
+    },
+    {
+        name: "Museum Object / Specimen",
+        characterAllowed: false,
+        description:
+            "do not make a humanoid; present the source as an artifact, specimen, preserved object, sculpture, fossil-like thing, or unexplained museum item",
+    },
+    {
+        name: "Food / Object Close-Up",
+        characterAllowed: false,
+        description:
+            "do not make a person; turn the source into a weird close-up of food, material, texture, household object, mechanical part, or physical prop",
+    },
+    {
+        name: "Toy / Packaging / Catalog",
+        characterAllowed: false,
+        description:
+            "do not default to a living being; make the source feel like a toy, boxed object, product catalog photo, shelf display, or fake commercial item",
+    },
+    {
+        name: "Architectural / Place Photo",
+        characterAllowed: false,
+        description:
+            "do not make a mascot; translate the source into a strange building, landscape, room, monument, stage set, or location photograph",
+    },
+    {
+        name: "Animal / Field Discovery",
+        characterAllowed: true,
+        description:
+            "only use a creature if the source supports it; make it feel like a field-guide discovery, strange animal documentation, or wildlife snapshot",
+    },
+    {
+        name: "Human Portrait / Meme Photo",
+        characterAllowed: true,
+        description:
+            "use a person only if the source supports it; create a fictional human, performer, awkward portrait, or meme-like snapshot without copying a real likeness",
+    },
+    {
+        name: "Mascot / Costume / Performer",
+        characterAllowed: true,
+        description:
+            "a mascot or costumed performer is allowed, but avoid the same bald head, giant eyes, and generic creature formula",
+    },
+    {
+        name: "Abstract Physical Prop",
+        characterAllowed: false,
+        description:
+            "do not make a face; turn the source into an abstract real-world prop, sculpture, machine, texture, diagram-like object, or impossible handmade construction",
+    },
+]
+
 const STYLE_WORLDS = [
+    {
+        name: "Bright Absurd Commercial",
+        description:
+            "a brightly lit, silly, colorful commercial-style photo, playful and bizarre, exaggerated but still photographic",
+    },
     {
         name: "Weird Family Snapshot",
         description:
-            "a surreal family snapshot, awkward but sincere, physically real, strange expressions, mundane setting turned bizarre",
+            "a surreal family snapshot, awkward but sincere, physically real, mundane setting turned bizarre",
     },
     {
         name: "Low-Budget Sci-Fi Still",
@@ -202,19 +323,14 @@ const STYLE_WORLDS = [
             "a cheap but memorable science-fiction movie still, practical effects, theatrical set design, cinematic but awkward",
     },
     {
-        name: "Bright Absurd Commercial",
-        description:
-            "a brightly lit, silly, colorful commercial-style photo, playful and bizarre, exaggerated but still photographic",
-    },
-    {
         name: "Mall Portrait Studio",
         description:
-            "a stiff portrait-studio photo with fake backdrop, awkward pose, over-serious expression, uncanny normality",
+            "a stiff portrait-studio photo with fake backdrop, awkward pose, over-serious energy, uncanny normality",
     },
     {
         name: "Tabloid Shock Photo",
         description:
-            "a sensational, bizarre tabloid-style image, direct flash, caught-at-the-wrong-moment energy, strange but believable",
+            "a sensational tabloid-style image, direct flash, caught-at-the-wrong-moment energy, strange but believable",
     },
     {
         name: "Public Access TV Still",
@@ -239,7 +355,7 @@ const STYLE_WORLDS = [
     {
         name: "Corporate Training Video Still",
         description:
-            "a cursed office-training still, beige realism, serious instructional pose, deeply awkward human energy",
+            "a cursed office-training still, beige realism, serious instructional pose, deeply awkward energy",
     },
     {
         name: "Surreal Domestic Photo",
@@ -254,45 +370,66 @@ const STYLE_WORLDS = [
     {
         name: "Cursed Internet Meme Photo",
         description:
-            "a low-resolution viral-looking image, funny and unsettling, awkward flash, strange facial proportions, meme-like realism",
+            "a low-resolution viral-looking image, funny and unsettling, awkward flash, strange proportions, meme-like realism",
     },
     {
         name: "Aquarium Bathroom Diorama",
         description:
-            "a surreal bathroom or aquarium-like set, wet blue lighting, coral textures, porcelain objects, absurd creature placement",
+            "a surreal bathroom or aquarium-like set, wet blue lighting, coral textures, porcelain objects, absurd placement",
     },
     {
-        name: "1970s Epoxy Puppet Portrait",
+        name: "1970s Epoxy Puppet / Object Photo",
         description:
-            "a glossy synthetic puppet-like portrait, epoxy acrylic skin, rounded features, strange glassy eyes, theatrical 1970s lighting",
+            "a glossy synthetic object or puppet-like prop, epoxy acrylic surface, rounded forms, theatrical 1970s lighting",
+    },
+    {
+        name: "Food Magazine Gone Wrong",
+        description:
+            "a bright old food-magazine photograph, strange edible forms, staged plates, glossy highlights, funny but physically real",
+    },
+    {
+        name: "Hardware Store Catalog",
+        description:
+            "a plain product photograph of tools, objects, parts, shelves, labels removed, practical and weirdly serious",
+    },
+    {
+        name: "School Science Fair Display",
+        description:
+            "a handmade poster-board or science-fair style display, awkward craft materials, physical model, fluorescent room lighting",
+    },
+    {
+        name: "Miniature Model Set",
+        description:
+            "a tabletop miniature scene, model railroad realism, tiny props, visible handmade scale details, photographed close",
     },
 ]
 
 const CAMERA_ANGLES = [
-    "extreme low angle looking upward, making the subject feel giant and ridiculous",
-    "high angle looking down from above, making the subject look trapped or pathetic",
-    "tight close-up with the face filling the frame",
-    "wide-angle full-body shot with exaggerated perspective",
+    "extreme low angle looking upward, making the source feel giant and ridiculous",
+    "high angle looking down from above, making the source look trapped, small, or clinical",
+    "tight close-up filling the frame with object texture or subject detail",
+    "wide-angle full scene shot with exaggerated perspective",
     "awkward off-center snapshot framing like the photographer reacted too late",
-    "front-facing deadpan portrait framing",
+    "front-facing deadpan documentation framing",
     "fisheye-like near-camera distortion",
-    "very close low-angle portrait with enlarged hands or features",
     "medium shot with too much empty space around the subject",
     "point-of-view angle as if the camera stumbled into the scene",
     "doorway or hallway angle, peeking into the situation",
     "floor-level shot looking slightly upward",
     "surveillance-like overhead angle",
     "backlit silhouette shot with the subject mostly in shadow",
-    "heroic promotional angle like a sports poster gone wrong",
-    "awkward posed school-photo angle",
+    "heroic promotional angle like a product poster gone wrong",
+    "awkward posed school-photo angle only if a person or mascot is appropriate",
     "slightly tilted dutch-angle composition",
-    "macro-close detail shot of a weird object or facial feature",
-    "wide lens inches from the subject, making the nose, hands, or mouth look too large",
-    "straight-on school portrait composition with a blank unnatural stare",
-    "low camera near the ground with the subject looming overhead",
+    "macro-close detail shot of material, food, machinery, surface, or artifact",
+    "wide lens inches from the object, making proportions feel huge and warped",
+    "straight-on product catalog composition with blank serious framing",
+    "low camera near the ground with the source looming overhead",
     "close flash snapshot with harsh shadows on the wall behind",
-    "long hallway perspective with the subject staring from the end",
-    "square cropped internet image framing with too much face and not enough context",
+    "long hallway perspective with the subject or object at the end",
+    "square cropped internet image framing with too much subject and not enough context",
+    "museum inventory angle, centered and emotionless",
+    "tabletop photography angle looking slightly down at a strange object",
 ]
 
 const LIGHTING_STYLES = [
@@ -307,7 +444,7 @@ const LIGHTING_STYLES = [
     "stage-like spotlight on the subject",
     "low-budget TV studio lighting",
     "overexposed daylight with blown-out highlights",
-    "golden-hour sunlight that makes the absurd subject look beautiful",
+    "golden-hour sunlight that makes the absurd source look beautiful",
     "aquarium-blue artificial light",
     "flashlit nighttime scene with dark background",
     "soft portrait-studio lighting with unsettling stillness",
@@ -319,6 +456,9 @@ const LIGHTING_STYLES = [
     "sickly green sci-fi glow from below",
     "toy-commercial studio lighting with glossy highlights",
     "cheap webcam-like room lighting with low-resolution softness",
+    "hardware-store fluorescent lighting",
+    "school classroom lighting",
+    "museum display-case lighting",
 ]
 
 const COLOR_MOODS = [
@@ -334,32 +474,39 @@ const COLOR_MOODS = [
     "clean product-photo whites and bold accent colors",
     "cheap VHS-video color response",
     "pale pastel portrait colors",
-    "hyper-bright blue sky and clean beige clothing tones",
-    "glossy green sci-fi helmet colors",
+    "hyper-bright blue sky and clean beige tones",
+    "glossy green sci-fi colors",
     "aquarium blues, coral pinks, and toilet porcelain whites",
     "low-res internet browns and muddy indoor shadows",
     "soft suburban brick-wall reds and corn-yellow highlights",
     "oversaturated meme-image colors with awkward compression",
+    "bright food-ad reds, yellows, and shiny highlights",
+    "museum beige, dusty gray, and aged paper tones",
+    "primary-color toy plastic palette",
 ]
 
-const SILLY_WEIRD_TRAITS = [
-    "give the subject oversized eyes or a blank, stunned stare",
-    "make the proportions awkward in a funny but believable way",
-    "make the hands, head, or mouth slightly too large",
-    "make the expression intensely serious even if the situation is ridiculous",
-    "make the image feel silly, absurd, and unintentionally hilarious",
-    "create the feeling of a cursed but memorable internet image",
-    "make the scene strangely wholesome and unsettling at the same time",
-    "add visual logic that feels dreamlike but still photographic",
-    "make the subject look like a real practical prop, mascot, costume, or malformed product",
-    "make the pose awkward and specific rather than generic",
-    "make the image feel like a forgotten meme from another universe",
-    "make the weirdness playful rather than scary",
-    "use a strange wide-eyed stare, tiny mouth, or oddly smooth face",
-    "make the subject appear caught in a ridiculous private moment",
-    "give it the energy of an old viral image people would repost for years",
-    "make it funny first, creepy second",
-    "add an absurd food, bathroom, toy, pet, or office connection only if it fits the Wikipedia topic",
+const OBJECT_DIRECTIONS = [
+    "make it a physical object with no face",
+    "make it a product photo with no character",
+    "make it an environment or room scene instead of a portrait",
+    "make it a strange artifact on a table",
+    "make it a handmade model or miniature set",
+    "make it a weird household object photographed seriously",
+    "make it a fake commercial product",
+    "make it a scientific specimen or archive object",
+    "make it an architectural or landscape transformation",
+    "make it a food, machine, prop, package, or display when appropriate",
+    "avoid eyes, mouth, face, or humanoid body unless the source truly supports it",
+    "avoid the same mascot-head formula; let the Wikipedia source decide the form",
+]
+
+const CHARACTER_DIRECTIONS = [
+    "only make a character if the Wikipedia source supports a person, animal, performer, mascot, or creature",
+    "if a character appears, make their silhouette and materials specific to the Wikipedia source",
+    "avoid generic bald humanoid heads",
+    "avoid repeating the same giant-eye mascot look",
+    "make the pose and costume highly specific rather than a reusable creature portrait",
+    "use a fictional performer or costume if the source is a real person",
 ]
 
 const MATERIALS = [
@@ -371,50 +518,37 @@ const MATERIALS = [
     "ceramic, porcelain, and polished household textures",
     "beige office materials, laminate, fake leather, and fluorescent reflections",
     "wet shiny surfaces, aquarium textures, and smooth odd skin",
-    "epoxy acrylic, glassy eyes, shiny green helmet plastic, synthetic skin",
-    "low-resolution compressed textures, weird skin smoothing, meme artifacting",
+    "epoxy acrylic, glassy surfaces, shiny green plastic, synthetic material",
+    "low-resolution compressed textures, weird smoothing, meme artifacting",
     "oversized food texture, kernels, soft flesh tones, and brick-wall background",
-    "coral reef textures, toilet porcelain, blue water light, rubber creature skin",
-]
-
-const EXPRESSIONS = [
-    "wide-eyed amazement",
-    "deadpan emotional emptiness",
-    "awkward forced smile",
-    "childlike wonder",
-    "caught-in-the-act panic",
-    "vacant public-access-TV stare",
-    "serious documentary expression",
-    "disturbingly cheerful grin",
-    "blank mascot expression",
-    "confused human discomfort",
-    "startled dog-like joy",
-    "smooth tiny-faced grin",
-    "terrified hallway stare",
-    "glazed puppet expression",
-    "too-proud heroic smile",
+    "coral reef textures, toilet porcelain, blue water light, rubber surfaces",
+    "wood, screws, chipped paint, dust, metal brackets, and handmade seams",
+    "paper labels removed, cardboard display stands, clear plastic packaging",
+    "stone, concrete, moss, old brick, landscape texture, and miniature terrain",
 ]
 
 const COMPOSITION_GAGS = [
-    "place the subject too close to the camera",
-    "make one body part appear huge because of lens distortion",
+    "place the source too close to the camera",
+    "make one part of the object or scene appear huge because of lens distortion",
     "use too much empty space for awkward comedy",
-    "frame the subject as if it is way more important than it should be",
-    "present the subject with absurd dignity",
-    "treat the bizarre subject like it belongs in a completely normal photo",
+    "frame the source as if it is way more important than it should be",
+    "present the bizarre object or scene with absurd dignity",
+    "treat the bizarre source like it belongs in a completely normal photo",
     "contrast a silly subject with a serious composition",
     "make the image feel like an accidental masterpiece",
-    "pose the subject in front of a plain wall as if nothing is wrong",
-    "make the camera angle make the subject look unexpectedly monumental",
+    "pose the source in front of a plain wall as if nothing is wrong",
+    "make the camera angle make the source look unexpectedly monumental",
     "stage it like a product demonstration gone wrong",
-    "place a bizarre subject in a bathroom, hallway, backyard, or office without explanation",
+    "place a bizarre object or scene in a bathroom, hallway, backyard, office, or store without explanation",
+    "make it look like a real listing photo for something nobody should own",
+    "make it look like a museum catalog image for an object nobody can explain",
 ]
 
 const BRIGHT_FUN_ENHANCERS = [
     "lean into bright, cheerful colors when appropriate",
     "allow playful, silly energy instead of always eerie energy",
     "favor bold visual contrast and memorable shapes",
-    "make the image visually loud if the subject allows it",
+    "make the image visually loud if the source allows it",
     "let the humor come from the photo feeling real",
     "make it feel like a viral image people cannot stop staring at",
     "make it look funnier, brighter, and more specific than a generic horror image",
@@ -426,15 +560,78 @@ function chooseWeighted(options, extra = []) {
     return pick(pool)
 }
 
+function chooseFormMode(profile) {
+    const extras = []
+
+    if (profile.isPerson) {
+        extras.push(
+            FORM_MODES.find((x) => x.name === "Human Portrait / Meme Photo"),
+            FORM_MODES.find((x) => x.name === "Mascot / Costume / Performer"),
+            FORM_MODES.find((x) => x.name === "Room / Environment Scene")
+        )
+    }
+
+    if (profile.isAnimal) {
+        extras.push(
+            FORM_MODES.find((x) => x.name === "Animal / Field Discovery"),
+            FORM_MODES.find((x) => x.name === "Museum Object / Specimen"),
+            FORM_MODES.find((x) => x.name === "Room / Environment Scene")
+        )
+    }
+
+    if (profile.isPlace) {
+        extras.push(
+            FORM_MODES.find((x) => x.name === "Architectural / Place Photo"),
+            FORM_MODES.find((x) => x.name === "Room / Environment Scene"),
+            FORM_MODES.find((x) => x.name === "Miniature Model Set")
+        )
+    }
+
+    if (profile.isObject || profile.isMedia) {
+        extras.push(
+            FORM_MODES.find((x) => x.name === "Strange Product Photo"),
+            FORM_MODES.find((x) => x.name === "Toy / Packaging / Catalog"),
+            FORM_MODES.find((x) => x.name === "Abstract Physical Prop")
+        )
+    }
+
+    if (profile.isScience) {
+        extras.push(
+            FORM_MODES.find((x) => x.name === "Museum Object / Specimen"),
+            FORM_MODES.find((x) => x.name === "Abstract Physical Prop")
+        )
+    }
+
+    if (profile.isFood) {
+        extras.push(
+            FORM_MODES.find((x) => x.name === "Food / Object Close-Up"),
+            FORM_MODES.find((x) => x.name === "Strange Product Photo")
+        )
+    }
+
+    if (!profile.isPerson && !profile.isAnimal) {
+        extras.push(
+            FORM_MODES.find((x) => x.name === "Strange Product Photo"),
+            FORM_MODES.find((x) => x.name === "Room / Environment Scene"),
+            FORM_MODES.find((x) => x.name === "Museum Object / Specimen"),
+            FORM_MODES.find((x) => x.name === "Toy / Packaging / Catalog"),
+            FORM_MODES.find((x) => x.name === "Abstract Physical Prop")
+        )
+    }
+
+    return chooseWeighted(FORM_MODES, extras)
+}
+
 function buildStyleMix(page) {
     const profile = inferWikiProfile(page)
+    const formMode = chooseFormMode(profile)
 
     const styleWorldExtras = []
     const angleExtras = []
     const lightingExtras = []
     const colorExtras = []
-    const sillyExtras = []
     const materialExtras = []
+    const directionExtras = []
 
     if (profile.isPerson) {
         styleWorldExtras.push(
@@ -444,10 +641,11 @@ function buildStyleMix(page) {
             STYLE_WORLDS.find((x) => x.name === "Cursed Internet Meme Photo")
         )
         angleExtras.push(
-            "extreme low-angle portrait making the person seem absurdly powerful",
-            "tight face close-up with unsettling human detail",
-            "wide lens close-up where the face and hands become too large"
+            "extreme low-angle portrait making the person seem absurdly powerful, only if a person is used",
+            "tight documentary close-up with unsettling human detail, only if a person is used",
+            "wide lens close-up where the face and hands become too large, only if a person is used"
         )
+        directionExtras.push(...CHARACTER_DIRECTIONS)
     }
 
     if (profile.isAnimal) {
@@ -462,32 +660,37 @@ function buildStyleMix(page) {
             "bright daylight as if caught in nature or a backyard",
             "aquarium-blue artificial light"
         )
-        sillyExtras.push(
-            "make the creature appear oddly human in posture or expression",
-            "make the animal look like it accidentally became a meme"
+        directionExtras.push(
+            "make the animal or creature form specific to the source, not a generic monster",
+            "avoid turning every animal into the same humanoid mascot"
         )
     }
 
-    if (profile.isObject) {
+    if (profile.isObject || profile.isMedia) {
         styleWorldExtras.push(
             STYLE_WORLDS.find((x) => x.name === "Toy / Catalog Photo"),
             STYLE_WORLDS.find((x) => x.name === "Museum Archive Documentation"),
-            STYLE_WORLDS.find((x) => x.name === "Bright Absurd Commercial")
+            STYLE_WORLDS.find((x) => x.name === "Bright Absurd Commercial"),
+            STYLE_WORLDS.find((x) => x.name === "Hardware Store Catalog")
         )
         materialExtras.push(
             "hard glossy product surfaces and packaging-like realism",
             "toy plastic, molded seams, bright paint, and catalog reflections"
         )
+        directionExtras.push(...OBJECT_DIRECTIONS)
     }
 
     if (profile.isPlace) {
         styleWorldExtras.push(
             STYLE_WORLDS.find((x) => x.name === "Heroic Giant Perspective"),
             STYLE_WORLDS.find((x) => x.name === "Bright Absurd Commercial"),
-            STYLE_WORLDS.find((x) => x.name === "Surreal Domestic Photo")
+            STYLE_WORLDS.find((x) => x.name === "Miniature Model Set")
         )
         angleExtras.push(
-            "dramatic perspective that exaggerates scale and makes architecture feel absurd"
+            "dramatic wide perspective that exaggerates scale and makes the location feel absurd"
+        )
+        directionExtras.push(
+            "make it a place, room, building, model, landscape, or monument instead of a character"
         )
     }
 
@@ -496,7 +699,10 @@ function buildStyleMix(page) {
             STYLE_WORLDS.find((x) => x.name === "Museum Archive Documentation"),
             STYLE_WORLDS.find((x) => x.name === "Field Guide Discovery"),
             STYLE_WORLDS.find((x) => x.name === "Low-Budget Sci-Fi Still"),
-            STYLE_WORLDS.find((x) => x.name === "1970s Epoxy Puppet Portrait")
+            STYLE_WORLDS.find((x) => x.name === "School Science Fair Display")
+        )
+        directionExtras.push(
+            "make it a specimen, diagram-like physical model, apparatus, or science fair object"
         )
     }
 
@@ -512,28 +718,47 @@ function buildStyleMix(page) {
         )
     }
 
+    if (profile.isFood) {
+        styleWorldExtras.push(
+            STYLE_WORLDS.find((x) => x.name === "Food Magazine Gone Wrong"),
+            STYLE_WORLDS.find((x) => x.name === "Bright Absurd Commercial")
+        )
+        colorExtras.push(
+            "bright food-ad reds, yellows, and shiny highlights",
+            "surreal candy-color palette"
+        )
+        directionExtras.push(
+            "make it food, packaging, texture, table setting, or kitchen object rather than a character"
+        )
+    }
+
     if (profile.isFunnyOrAbsurd) {
         colorExtras.push(
             "ultra-bright playful colors",
             "ridiculous but lovable color combinations",
             "oversaturated meme-image colors with awkward compression"
         )
-        sillyExtras.push(
-            "make it extra silly and meme-like",
-            "lean into ridiculous humor while keeping it photographic"
+        directionExtras.push(
+            "lean into ridiculous humor while keeping it photographic",
+            "make it silly through the situation, object, setting, or composition, not only through a face"
         )
     }
 
+    if (!profile.isPerson && !profile.isAnimal) {
+        directionExtras.push(...OBJECT_DIRECTIONS)
+    }
+
     return {
+        profile,
+        formMode,
         world: chooseWeighted(STYLE_WORLDS, styleWorldExtras),
         cameraAngle: chooseWeighted(CAMERA_ANGLES, angleExtras),
         lighting: chooseWeighted(LIGHTING_STYLES, lightingExtras),
         colorMood: chooseWeighted(COLOR_MOODS, colorExtras),
-        silly1: chooseWeighted(SILLY_WEIRD_TRAITS, sillyExtras),
-        silly2: pick(SILLY_WEIRD_TRAITS),
-        silly3: pick(SILLY_WEIRD_TRAITS),
         materials: chooseWeighted(MATERIALS, materialExtras),
-        expression: pick(EXPRESSIONS),
+        direction1: chooseWeighted(OBJECT_DIRECTIONS, directionExtras),
+        direction2: chooseWeighted(OBJECT_DIRECTIONS, directionExtras),
+        direction3: chooseWeighted(COMPOSITION_GAGS, directionExtras),
         composition: pick(COMPOSITION_GAGS),
         brightFun: pick(BRIGHT_FUN_ENHANCERS),
     }
@@ -556,11 +781,14 @@ ${summary}
 Wikipedia image source:
 ${wikiImageUrl || "No image available"}
 
-Use the Wikipedia topic, the text information, and the source image as inspiration.
-The final image should feel strongly shaped by what the subject actually is.
-If the topic is a person, lean into portrait, documentary, meme-photo, or absurd heroic perspective logic.
-If the topic is an animal, object, place, scientific topic, domestic subject, or event, let that change the entire structure of the image.
-Do not use one generic creature formula every time.
+Core instruction:
+Use the Wikipedia topic, text information, and source image as inspiration.
+The final image should be strongly shaped by what the source actually is.
+Do NOT use one generic weird character formula every time.
+
+Chosen image form:
+${styleMix.formMode.name}
+${styleMix.formMode.description}
 
 Visual world:
 ${styleMix.world.name}
@@ -575,46 +803,49 @@ ${styleMix.lighting}
 Color mood:
 ${styleMix.colorMood}
 
-Expression or emotional tone:
-${styleMix.expression}
+Materials / texture:
+${styleMix.materials}
 
 Composition idea:
 ${styleMix.composition}
 
-Materials / texture:
-${styleMix.materials}
-
-Weirdness directions:
-${styleMix.silly1}
-${styleMix.silly2}
-${styleMix.silly3}
+Specific variation directions:
+${styleMix.direction1}
+${styleMix.direction2}
+${styleMix.direction3}
 
 Extra energy:
 ${styleMix.brightFun}
 
-Important style direction based on the established look:
+Important anti-repetition rules:
+Do not default to a humanoid character.
+Do not reuse the same bald head, big eyes, tiny mouth, mascot face, or creature portrait formula.
+If the Wikipedia topic is not clearly about a person or animal, avoid making a face entirely.
+Let the subject become a scene, object, product, place, food, machine, specimen, prop, display, room, landscape, architecture, package, toy, or environment.
+Only make a person, mascot, or creature when the chosen image form and Wikipedia source support it.
+If a person appears, make it fictional and transformed, not a copy of any real person.
+If a character appears, their shape, materials, costume, and setting must be specific to the Wikipedia source, not generic.
+
 Use a broad range that can include:
+- strange product photography
+- weird room or environment scenes
+- museum objects and specimen photos
+- food/object close-ups
+- toy packaging and catalog photos
+- architectural/place transformations
+- field-guide discoveries
+- meme-like snapshots
+- public-access TV stills
 - bright surreal commercial photography
-- awkward family snapshots
-- low-angle giant-perspective portraits
+- low-angle giant-perspective photos
 - fish-eye or close-lens distortion
-- bizarre but funny human expressions
 - domestic absurdity
-- strange meme-like realism
-- practical effects and odd mascot-like forms
-- glossy epoxy or acrylic puppet-like faces
-- oversized hands, heads, eyes, mouths, or food objects when appropriate
-- aquarium bathroom surrealism when appropriate
-- playful, bright, visually memorable weirdness
-- uncanny but sometimes silly rather than always creepy
+- practical effects, handmade props, and physical materials
 
 Make it look like a photographed image, not a polished digital illustration.
 It can be bright, funny, awkward, surreal, or slightly disturbing depending on the topic.
 Let the Wikipedia subject determine which direction makes the most sense.
-The image should feel like it could become a strange viral meme.
-
-If the topic is a real person, do not recreate their exact likeness.
-Instead make a fictionalized or transformed version inspired by the subject.
+The image should feel like it could become a strange viral image because of its specificity.
 
 Hard rules:
 One single image only.
@@ -750,14 +981,12 @@ function getUpstashConfig() {
     const url =
         process.env.UPSTASH_REDIS_REST_URL ||
         process.env.KV_REST_API_URL ||
-        process.env.UPSTASH_KV_REST_API_URL ||
-        process.env.UPSTASH_REDIS_REST_KV_REST_API_URL
+        process.env.UPSTASH_KV_REST_API_URL
 
     const token =
         process.env.UPSTASH_REDIS_REST_TOKEN ||
         process.env.KV_REST_API_TOKEN ||
-        process.env.UPSTASH_KV_REST_API_TOKEN ||
-        process.env.UPSTASH_REDIS_REST_KV_REST_API_TOKEN
+        process.env.UPSTASH_KV_REST_API_TOKEN
 
     if (!url || !token) return null
 
