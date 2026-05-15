@@ -1,9 +1,9 @@
 {
-  "name": "mma-image-api",
-  "version": "1.0.0",
-  "private": true,
-  "type": "commonjs",
+  "scripts": {
+    "dev": "vercel dev"
+  },
   "dependencies": {
-    "openai": "latest"
+    "openai": "latest",
+    "twitter-api-v2": "latest"
   }
 }
