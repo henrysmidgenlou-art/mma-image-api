@@ -920,47 +920,96 @@ No explicit violence.
 
 async function fetchRandomWikipediaPage(requireImage = true) {
     const preferPeople = process.env.WIKI_PEOPLE_BIAS === "0" ? false : true
-    const peopleTries = Number(process.env.WIKI_PEOPLE_TRIES || 30)
-    const fallbackTries = Number(process.env.WIKI_FALLBACK_TRIES || 12)
+    const batchSize = Number(process.env.WIKI_RANDOM_BATCH_SIZE || 20)
 
-    let lastValidPage = null
+    async function fetchRandomBatch() {
+        const params = new URLSearchParams({
+            action: "query",
+            format: "json",
+            generator: "random",
+            grnnamespace: "0",
+            grnlimit: String(batchSize),
+            prop: "extracts|pageimages|info",
+            exintro: "1",
+            explaintext: "1",
+            inprop: "url",
+            piprop: "thumbnail|original",
+            pithumbsize: "800",
+            origin: "*",
+        })
 
-    async function getRandomPage() {
         const response = await fetch(
-            "https://en.wikipedia.org/api/rest_v1/page/random/summary"
+            `https://en.wikipedia.org/w/api.php?${params.toString()}`,
+            {
+                headers: {
+                    "User-Agent":
+                        "RamonAIImageBot/1.0 (https://mma-image-api.vercel.app)",
+                },
+            }
         )
 
         if (!response.ok) {
             throw new Error(`Wikipedia failed: ${response.status}`)
         }
 
-        return await response.json()
+        const data = await response.json()
+        const pages = Object.values(data?.query?.pages || {})
+
+        return pages.map((page) => ({
+            title: page.title || "",
+            extract: page.extract || "",
+            description: "",
+            type: "standard",
+            url: page.fullurl || "",
+            content_urls: {
+                desktop: {
+                    page: page.fullurl || "",
+                },
+                mobile: {
+                    page: page.fullurl || "",
+                },
+            },
+            thumbnail: page.thumbnail?.source
+                ? {
+                      source: page.thumbnail.source,
+                  }
+                : undefined,
+            originalimage: page.original?.source
+                ? {
+                      source: page.original.source,
+                  }
+                : undefined,
+        }))
     }
 
     function isValidPage(page) {
         const hasTitle = page?.title && !page.title.includes(":")
         const hasSummary = page?.extract && page.extract.length > 80
-        const notDisambiguation = page?.type !== "disambiguation"
         const hasImage = Boolean(getWikipediaImageUrl(page))
 
-        return (
-            hasTitle &&
-            hasSummary &&
-            notDisambiguation &&
-            (!requireImage || hasImage)
-        )
+        return hasTitle && hasSummary && (!requireImage || hasImage)
+    }
+
+    const pages = await fetchRandomBatch()
+    const validPages = pages.filter(isValidPage)
+
+    if (!validPages.length) {
+        throw new Error("No valid Wikipedia pages found in random batch.")
     }
 
     if (preferPeople) {
-        for (let i = 0; i < peopleTries; i++) {
-            const page = await getRandomPage()
+        const peoplePages = validPages.filter((page) => {
+            const profile = inferWikiProfile(page)
+            return profile.isPerson
+        })
 
-            if (isValidPage(page)) {
-                lastValidPage = page
+        if (peoplePages.length) {
+            return pick(peoplePages)
+        }
+    }
 
-                const profile = inferWikiProfile(page)
-                if (profile.isPerson) return page
-            }
+    return pick(validPages)
+}
         }
     }
 
