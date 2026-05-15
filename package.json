@@ -3,6 +3,7 @@
     "dev": "vercel dev"
   },
   "dependencies": {
+    "@vercel/blob": "latest",
     "openai": "latest",
     "twitter-api-v2": "latest"
   }
