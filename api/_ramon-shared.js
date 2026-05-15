@@ -934,7 +934,7 @@ async function fetchRandomWikipediaPage(requireImage = true) {
             explaintext: "1",
             inprop: "url",
             piprop: "thumbnail|original",
-            pithumbsize: "800",
+            pithumbsize: "900",
             origin: "*",
         })
 
@@ -990,7 +990,14 @@ async function fetchRandomWikipediaPage(requireImage = true) {
         return hasTitle && hasSummary && (!requireImage || hasImage)
     }
 
-    const pages = await fetchRandomBatch()
+    let pages = []
+
+    try {
+        pages = await fetchRandomBatch()
+    } catch (error) {
+        throw new Error(error?.message || "Wikipedia batch request failed.")
+    }
+
     const validPages = pages.filter(isValidPage)
 
     if (!validPages.length) {
