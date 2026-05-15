@@ -1,9 +1,10 @@
 const OpenAIModule = require("openai")
 const OpenAI = OpenAIModule.default || OpenAIModule
 
-const DEFAULT_IMAGE_MODEL = "gpt-image-2"
+const DEFAULT_IMAGE_MODEL = "gpt-image-1"
 const DEFAULT_IMAGE_SIZE = "1536x1024"
 const DEFAULT_IMAGE_QUALITY = "medium"
+const RECENT_KEY = "ramon:recent-generations"
 
 function pick(arr) {
     return arr[Math.floor(Math.random() * arr.length)]
@@ -49,13 +50,26 @@ function cleanWikiTitleFromUrl(url) {
     }
 }
 
+function makeTicker(title) {
+    let clean = String(title || "MEME")
+        .normalize("NFKD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-zA-Z0-9]/g, "")
+        .toUpperCase()
+
+    if (!clean) clean = "MEME"
+    if (/^\d/.test(clean)) clean = `M${clean}`
+
+    return `$${clean.slice(0, 8)}`
+}
+
 function inferWikiProfile(page) {
     const title = safeText(page?.title)
     const summary = safeText(page?.extract)
     const description = safeText(page?.description)
     const full = `${title} ${description} ${summary}`
 
-    const hasAny = (words) => words.some((w) => full.includes(w))
+    const hasAny = (words) => words.some((word) => full.includes(word))
 
     return {
         isPerson: hasAny([
@@ -663,19 +677,6 @@ async function fetchWikipediaPageFromUrl(url) {
     return await response.json()
 }
 
-function makeTicker(title) {
-    let clean = String(title || "MEME")
-        .normalize("NFKD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .replace(/[^a-zA-Z0-9]/g, "")
-        .toUpperCase()
-
-    if (!clean) clean = "MEME"
-    if (/^\d/.test(clean)) clean = `M${clean}`
-
-    return `$${clean.slice(0, 8)}`
-}
-
 function buildPromptFromPage(page) {
     const styleMix = buildStyleMix(page)
     const prompt = buildWeirdWikiPrompt(page, styleMix)
@@ -696,9 +697,10 @@ async function generateImageBuffer(prompt) {
     })
 
     const model =
-    process.env.OPENAI_IMAGE_MODEL ||
-    process.env.IMAGE_MODEL ||
-    DEFAULT_IMAGE_MODEL
+        process.env.OPENAI_IMAGE_MODEL ||
+        process.env.IMAGE_MODEL ||
+        DEFAULT_IMAGE_MODEL
+
     const size = process.env.IMAGE_SIZE || DEFAULT_IMAGE_SIZE
     const quality = process.env.IMAGE_QUALITY || DEFAULT_IMAGE_QUALITY
 
@@ -726,12 +728,123 @@ async function generateImageBuffer(prompt) {
     }
 }
 
+async function uploadImageToBlob({ buffer, filename, mimeType = "image/png" }) {
+    if (!process.env.BLOB_READ_WRITE_TOKEN) return ""
+
+    const { put } = await import("@vercel/blob")
+
+    const safeFilename = String(filename || "ramon-generation.png")
+        .replace(/[^a-zA-Z0-9._-]/g, "-")
+        .slice(0, 80)
+
+    const blob = await put(`ramon/${Date.now()}-${safeFilename}`, buffer, {
+        access: "public",
+        contentType: mimeType,
+        addRandomSuffix: true,
+    })
+
+    return blob.url
+}
+
+function getUpstashConfig() {
+    const url =
+        process.env.UPSTASH_REDIS_REST_URL ||
+        process.env.KV_REST_API_URL ||
+        process.env.UPSTASH_KV_REST_API_URL ||
+        process.env.UPSTASH_REDIS_REST_KV_REST_API_URL
+
+    const token =
+        process.env.UPSTASH_REDIS_REST_TOKEN ||
+        process.env.KV_REST_API_TOKEN ||
+        process.env.UPSTASH_KV_REST_API_TOKEN ||
+        process.env.UPSTASH_REDIS_REST_KV_REST_API_TOKEN
+
+    if (!url || !token) return null
+
+    return {
+        url: String(url).replace(/\/$/, ""),
+        token,
+    }
+}
+
+async function upstashCommand(command) {
+    const config = getUpstashConfig()
+    if (!config) return null
+
+    const response = await fetch(config.url, {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${config.token}`,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(command),
+    })
+
+    const data = await response.json().catch(() => ({}))
+
+    if (!response.ok) {
+        throw new Error(data?.error || `Upstash failed: ${response.status}`)
+    }
+
+    return data.result
+}
+
+async function getRecentGenerations() {
+    try {
+        const result = await upstashCommand(["GET", RECENT_KEY])
+        if (!result) return []
+
+        const parsed = JSON.parse(result)
+        if (!Array.isArray(parsed)) return []
+
+        return parsed.slice(0, 10)
+    } catch {
+        return []
+    }
+}
+
+async function saveRecentGeneration(item) {
+    try {
+        if (!item?.image) return false
+
+        const current = await getRecentGenerations()
+
+        const next = [
+            item,
+            ...current.filter((existing) => existing.image !== item.image),
+        ].slice(0, 10)
+
+        await upstashCommand(["SET", RECENT_KEY, JSON.stringify(next)])
+
+        return true
+    } catch {
+        return false
+    }
+}
+
+function buildRecentItem({ image, page, prompt, source = "api" }) {
+    return {
+        image,
+        title: page?.title || "Custom Prompt",
+        wikiUrl: page ? getWikipediaPageUrl(page) : "",
+        wikiImageUrl: page ? getWikipediaImageUrl(page) : "",
+        prompt: prompt || "",
+        source,
+        createdAt: new Date().toISOString(),
+    }
+}
+
 module.exports = {
     getWikipediaImageUrl,
     getWikipediaPageUrl,
+    cleanWikiTitleFromUrl,
     fetchRandomWikipediaPage,
     fetchWikipediaPageFromUrl,
     buildPromptFromPage,
     generateImageBuffer,
+    uploadImageToBlob,
     makeTicker,
+    getRecentGenerations,
+    saveRecentGeneration,
+    buildRecentItem,
 }
