@@ -111,6 +111,9 @@ function inferWikiProfile(page) {
             "coach",
             "model",
             "designer",
+            "screenwriter",
+            "filmmaker",
+            "dancer",
         ]),
         isAnimal: hasAny([
             "animal",
@@ -304,56 +307,74 @@ function extractWikiAnchors(page) {
                     "wikipedia",
                     "article",
                     "english",
+                    "including",
+                    "several",
+                    "became",
+                    "called",
                 ].includes(word.toLowerCase())
         )
 
-    const unique = [...new Set(words)].slice(0, 14)
+    const unique = [...new Set(words)].slice(0, 16)
 
     return unique.length ? unique.join(", ") : title
 }
 
 const FORM_MODES = [
     {
+        name: "Person-First Publicity Photo",
+        characterAllowed: true,
+        weightForPeople: 16,
+        description:
+            "keep the source as a fictionalized person-first image inspired by the person's role, career, era, wardrobe, posture, and public context",
+    },
+    {
         name: "Human Portrait / Meme Photo",
         characterAllowed: true,
-        weightForPeople: 8,
+        weightForPeople: 12,
         description:
-            "make a fictionalized person-like image inspired by the source, but do not copy a real likeness",
+            "make a strange fictional human portrait inspired by the source, meme-like but still connected to the person's biography",
+    },
+    {
+        name: "Movie Still / Public Figure Scene",
+        characterAllowed: true,
+        weightForPeople: 10,
+        description:
+            "make a fictional alternate-universe movie still, publicity photo, award-photo, sports portrait, TV still, or magazine image connected to the person",
+    },
+    {
+        name: "Toy / Action Figure / Wax Figure",
+        characterAllowed: true,
+        weightForPeople: 6,
+        description:
+            "make the person source into a toy-like figure, wax figure, action figure, puppet, boxed figure, or catalog character",
     },
     {
         name: "Mascot / Costume / Performer",
         characterAllowed: true,
-        weightForPeople: 7,
+        weightForPeople: 3,
         description:
-            "make a costumed performer, mascot, suit, public-access guest, or staged character inspired by the source",
-    },
-    {
-        name: "Toy / Action Figure / Doll",
-        characterAllowed: true,
-        weightForPeople: 6,
-        description:
-            "make the source into a toy-like figure, doll, action figure, puppet, package photo, or catalog character",
+            "make a costumed performer or staged character inspired by the source, but keep it connected to the person's role and avoid unrelated animal transformations",
     },
     {
         name: "Creature / Field Discovery",
         characterAllowed: true,
-        weightForPeople: 3,
+        weightForPeople: 0,
         description:
-            "make a strange documented creature only if the source supports it; base anatomy on the source, not a generic monster",
+            "make a strange documented creature only if the source is animal/creature related; do not use this for normal real-person pages",
     },
     {
         name: "Strange Product Photo",
         characterAllowed: false,
-        weightForPeople: 2,
+        weightForPeople: 1,
         description:
             "do not make a character; turn the source into a bizarre physical product, prototype, appliance, gadget, package, or catalog object",
     },
     {
         name: "Room / Environment Scene",
         characterAllowed: false,
-        weightForPeople: 2,
+        weightForPeople: 1,
         description:
-            "turn the source into a strange room, staged environment, hallway, office, bathroom, bedroom, gym, or miniature set",
+            "turn the source into a strange room, staged environment, hallway, office, bathroom, bedroom, gym, film set, or miniature set",
     },
     {
         name: "Museum Object / Specimen",
@@ -378,13 +399,144 @@ const FORM_MODES = [
     },
 ]
 
+const PERSON_SAFE_ARCHETYPE_NAMES = [
+    "Low-Angle Movie Star",
+    "Magazine Cover Doppelganger",
+    "Wax Museum Celebrity Figure",
+    "Public Access TV Guest",
+    "Action Figure Actor",
+    "Old Magazine Advertisement Person",
+    "Sports Card Oddity",
+    "Suburban Backyard Giant",
+    "Ancient Portrait Figure",
+    "Corporate Training Dummy",
+    "Medical Demonstration Dummy",
+    "Claymation-Looking Real Puppet",
+    "Inflatable Vinyl Person",
+    "Appliance-Head Person",
+    "Rubber Suit Movie Extra",
+    "Mall Portrait Alien Relative",
+]
+
+const ANIMAL_ARCHETYPE_NAMES = [
+    "Cursed Pet-Like Meme Creature",
+    "Aquarium Bathroom Creature",
+    "Scientific Field Specimen",
+    "Tiny Roommate Creature",
+]
+
 const CHARACTER_ARCHETYPES = [
     {
-        name: "Low-Angle Giant Human",
-        body: "oversized human-like figure, huge hands or torso, photographed from far below",
-        face: "normal-ish human face with awkward realism, not a puppet face",
-        mood: "heroic, silly, monumental, like a ridiculous public statue came alive",
-        avoid: "no mascot head, no giant cartoon eyes, no generic monster",
+        name: "Low-Angle Movie Star",
+        body: "fictional movie-star stand-in, human body, dramatic heroic stance, huge perspective from below",
+        face: "fictional human face inspired by the source image composition, not the real person's exact likeness",
+        mood: "alternate-universe celebrity publicity photo, action-movie confidence, silly but person-first",
+        avoid: "no animal body, no random dog, no unrelated mascot, no copy of the real face",
+    },
+    {
+        name: "Magazine Cover Doppelganger",
+        body: "fictional celebrity-like person posed like an old magazine portrait or publicity still",
+        face: "recognizably human, charismatic but slightly wrong, not a direct likeness",
+        mood: "glossy but strange celebrity portrait, bright commercial colors, awkward charm",
+        avoid: "no creature face, no pet transformation, no mascot head",
+    },
+    {
+        name: "Wax Museum Celebrity Figure",
+        body: "stiff wax figure body, formal celebrity pose, museum display posture",
+        face: "slightly melted waxy human face, blank eyes, too-still expression, not exact likeness",
+        mood: "dusty wax museum realism, uncanny but person-related",
+        avoid: "no dog, no monster, no generic bald puppet",
+    },
+    {
+        name: "Public Access TV Guest",
+        body: "fictional guest or host seated on a cheap local TV set, human or costume based on the source",
+        face: "awkward human expression, uncomfortable smile, VHS still-frame realism",
+        mood: "cheap studio interview, public-access TV, strange but connected to their career or role",
+        avoid: "no unrelated animal creature, no generic sci-fi alien",
+    },
+    {
+        name: "Action Figure Actor",
+        body: "toy-like action figure or collectible version of a fictionalized public figure",
+        face: "painted toy face, not realistic, not an exact likeness",
+        mood: "1990s toy commercial, boxed-figure energy, colorful product-photo weirdness",
+        avoid: "no living dog or pet, no monster unless source supports it",
+    },
+    {
+        name: "Old Magazine Advertisement Person",
+        body: "fictional spokesperson or model posed in an old advertisement layout",
+        face: "smiling too intensely or deadpan like a print ad model",
+        mood: "bright magazine ad, product demonstration, absurd optimism",
+        avoid: "no creature transformation unless source demands it",
+    },
+    {
+        name: "Sports Card Oddity",
+        body: "athletic pose, trading-card portrait, uniform or costume based on source keywords",
+        face: "serious game-face expression or mascot-athlete stare",
+        mood: "1990s sports card photo, flash, bold posture",
+        avoid: "no museum specimen framing",
+    },
+    {
+        name: "Suburban Backyard Giant",
+        body: "large awkward human-like figure in a normal backyard, porch, driveway, or lawn",
+        face: "fictional human or mask face based on source role, not exact likeness",
+        mood: "daylight neighborhood photo, absurd scale, strangely believable",
+        avoid: "no pet body, no animal transformation",
+    },
+    {
+        name: "Ancient Portrait Figure",
+        body: "stiff historical portrait pose translated into a photographed costume or prop",
+        face: "painted, powdered, masked, or serious museum-like expression",
+        mood: "old portrait meets real flash photo, strange and formal",
+        avoid: "no modern meme compression",
+    },
+    {
+        name: "Corporate Training Dummy",
+        body: "office-training mannequin, presenter, or dummy in beige corporate setting",
+        face: "instructional blank stare, plastic or mannequin-like, awkward professionalism",
+        mood: "cursed office training video, fluorescent, serious and absurd",
+        avoid: "no fantasy creature anatomy",
+    },
+    {
+        name: "Medical Demonstration Dummy",
+        body: "non-graphic clinical demonstration dummy, plastic anatomy model, sterile room",
+        face: "smooth medical mannequin face or featureless head",
+        mood: "clean, unsettling, textbook-photo realism",
+        avoid: "no gore, no wounds",
+    },
+    {
+        name: "Claymation-Looking Real Puppet",
+        body: "soft rounded handmade body, clay-like surface, visible handmade imperfections",
+        face: "simple handmade facial features, uneven eyes, not symmetrical",
+        mood: "physical stop-motion puppet photographed in real life",
+        avoid: "no glossy AI fantasy finish",
+    },
+    {
+        name: "Inflatable Vinyl Person",
+        body: "air-filled vinyl human-like body, rounded swollen limbs, seams and glossy wrinkles",
+        face: "printed or molded face, slightly misaligned, toy-like",
+        mood: "weird promotional inflatable photographed seriously",
+        avoid: "no realistic skin, no animal body",
+    },
+    {
+        name: "Appliance-Head Person",
+        body: "ordinary human body with a source-specific machine, appliance, helmet, object, or artifact replacing the head",
+        face: "no normal face; the object itself is the head",
+        mood: "deadpan, funny, product-meets-person surrealism",
+        avoid: "no eyes unless the source object naturally suggests them",
+    },
+    {
+        name: "Rubber Suit Movie Extra",
+        body: "visible rubber suit, foam seams, practical-effects costume, awkward human posture",
+        face: "mask or prosthetic face with handmade detail",
+        mood: "low-budget movie still, cinematic but cheap, physical effects",
+        avoid: "no polished digital fantasy, no random pet",
+    },
+    {
+        name: "Mall Portrait Alien Relative",
+        body: "stiff seated or standing figure posed like an awkward family portrait",
+        face: "forced smile, strange but gentle human-like features, soft studio weirdness",
+        mood: "family-photo energy, awkward and wholesome, not scary",
+        avoid: "no horror monster posture",
     },
     {
         name: "Glossy Helmet Puppet",
@@ -415,32 +567,11 @@ const CHARACTER_ARCHETYPES = [
         avoid: "no dry studio portrait",
     },
     {
-        name: "Mall Portrait Alien Relative",
-        body: "stiff seated or standing figure posed like an awkward family portrait",
-        face: "forced smile, strange but gentle features, soft studio weirdness",
-        mood: "family-photo energy, awkward and wholesome, not scary",
-        avoid: "no horror monster posture",
-    },
-    {
-        name: "Public Access TV Guest",
-        body: "bizarre seated guest or host on a cheap local TV set",
-        face: "odd costume, prop head, mask, or uncomfortable human expression",
-        mood: "VHS still frame, awkward interview, cheap studio lights",
-        avoid: "no cinematic monster close-up",
-    },
-    {
         name: "Toy Commercial Mascot",
         body: "colorful molded toy-like character or mascot staged like a product commercial",
         face: "painted toy features, shiny plastic eyes, cheerful but off",
         mood: "bright 1990s toy ad, playful, colorful, product-photo energy",
         avoid: "no dark horror lighting",
-    },
-    {
-        name: "Corporate Training Dummy",
-        body: "office-training mannequin, presenter, or dummy in beige corporate setting",
-        face: "instructional blank stare, plastic or mannequin-like, awkward professionalism",
-        mood: "cursed office training video, fluorescent, serious and absurd",
-        avoid: "no fantasy creature anatomy",
     },
     {
         name: "Scientific Field Specimen",
@@ -450,60 +581,11 @@ const CHARACTER_ARCHETYPES = [
         avoid: "no generic mascot costume",
     },
     {
-        name: "Rubber Suit Movie Extra",
-        body: "visible rubber suit, foam seams, practical-effects costume, awkward posture",
-        face: "mask or prosthetic face with handmade detail",
-        mood: "low-budget movie still, cinematic but cheap, physical effects",
-        avoid: "no polished digital fantasy",
-    },
-    {
-        name: "Smooth Internet Doll Face",
-        body: "small or stiff body with doll-like proportions and compressed internet-image texture",
-        face: "smooth uncanny doll face, tiny features, awkward close framing",
-        mood: "cursed meme image, funny and uncomfortable",
-        avoid: "no latex monster suit",
-    },
-    {
-        name: "Old Magazine Advertisement Person",
-        body: "fictional spokesperson or model posed in an old advertisement layout",
-        face: "smiling too intensely or deadpan like a print ad model",
-        mood: "bright magazine ad, product demonstration, absurd optimism",
-        avoid: "no creature transformation unless source demands it",
-    },
-    {
-        name: "Sports Card Oddity",
-        body: "athletic pose, trading-card portrait, uniform or costume based on source keywords",
-        face: "serious game-face expression or mascot-athlete stare",
-        mood: "1990s sports card photo, flash, bold posture",
-        avoid: "no museum specimen framing",
-    },
-    {
-        name: "Suburban Backyard Giant",
-        body: "large awkward figure in a normal backyard, porch, driveway, or lawn",
-        face: "human, mask, object, or animal face based on source",
-        mood: "daylight neighborhood photo, absurd scale, strangely believable",
-        avoid: "no studio background",
-    },
-    {
-        name: "Handmade Parade Float Person",
-        body: "bulky papier-mâché costume or parade-float style body",
-        face: "painted handmade face, uneven craft texture, source-specific shape",
-        mood: "local parade, homemade, bright, silly, public event photo",
-        avoid: "no sleek plastic toy finish",
-    },
-    {
         name: "Tiny Roommate Creature",
         body: "small person/creature/object living in an ordinary room, table, bed, or shelf",
         face: "tiny expressive face or no face depending on the source",
         mood: "domestic, funny, snapshot-like, discovered accidentally",
         avoid: "no giant heroic angle",
-    },
-    {
-        name: "Ancient Portrait Figure",
-        body: "stiff historical portrait pose translated into a photographed costume or prop",
-        face: "painted, powdered, masked, or serious museum-like expression",
-        mood: "old portrait meets real flash photo, strange and formal",
-        avoid: "no modern meme compression",
     },
     {
         name: "Hardware Store Humanoid",
@@ -512,44 +594,10 @@ const CHARACTER_ARCHETYPES = [
         mood: "practical, funny, product-photo realism",
         avoid: "no flesh face unless source requires it",
     },
-    {
-        name: "Medical Demonstration Dummy",
-        body: "non-graphic clinical demonstration dummy, plastic anatomy model, sterile room",
-        face: "smooth medical mannequin face or featureless head",
-        mood: "clean, unsettling, textbook-photo realism",
-        avoid: "no gore, no wounds",
-    },
-    {
-        name: "Claymation-Looking Real Puppet",
-        body: "soft rounded handmade body, clay-like surface, visible handmade imperfections",
-        face: "simple handmade facial features, uneven eyes, not symmetrical",
-        mood: "looks like a physical stop-motion puppet photographed in real life",
-        avoid: "no glossy AI fantasy finish",
-    },
-    {
-        name: "Inflatable Vinyl Person",
-        body: "air-filled vinyl body, rounded swollen limbs, seams and glossy wrinkles",
-        face: "printed or molded face, slightly misaligned, toy-like",
-        mood: "weird promotional inflatable photographed seriously",
-        avoid: "no realistic skin",
-    },
-    {
-        name: "Old Wax Museum Figure",
-        body: "stiff wax figure body, formal posture, museum display lighting",
-        face: "slightly melted wax face, blank eyes, too-still expression",
-        mood: "dusty wax museum realism, strange but quiet",
-        avoid: "no rubber monster suit",
-    },
-    {
-        name: "Appliance-Head Person",
-        body: "ordinary human body with a source-specific machine, appliance, helmet, object, or artifact replacing the head",
-        face: "no normal face; the object itself is the head",
-        mood: "deadpan, funny, product-meets-person surrealism",
-        avoid: "no eyes unless the source object naturally suggests them",
-    },
 ]
 
 const STYLE_WORLDS = [
+    "alternate-universe celebrity publicity photograph",
     "bright surreal commercial photography",
     "awkward family snapshot",
     "low-budget sci-fi movie still",
@@ -574,6 +622,8 @@ const STYLE_WORLDS = [
     "old product demonstration photo",
     "strange yearbook portrait",
     "toy store display photo",
+    "paparazzi photo from a strange event",
+    "movie poster behind-the-scenes still",
 ]
 
 const CAMERA_ANGLES = [
@@ -604,6 +654,8 @@ const CAMERA_ANGLES = [
     "close-up from below the chin",
     "side profile like a catalog specimen",
     "three-quarter portrait with awkward flash",
+    "red-carpet step-and-repeat angle without readable logos",
+    "paparazzi telephoto crop",
 ]
 
 const LIGHTING_STYLES = [
@@ -634,6 +686,7 @@ const LIGHTING_STYLES = [
     "wax museum spotlighting",
     "school gymnasium lighting",
     "strip-mall storefront lighting",
+    "Hollywood press-photo flash",
 ]
 
 const COLOR_MOODS = [
@@ -661,6 +714,7 @@ const COLOR_MOODS = [
     "neon arcade colors",
     "faded family-album colors",
     "loud parade-float colors",
+    "glossy celebrity-magazine colors",
 ]
 
 const MATERIALS = [
@@ -686,6 +740,8 @@ const MATERIALS = [
     "inflatable vinyl seams",
     "clay-like handmade surface",
     "appliance plastic and chrome",
+    "cheap formalwear fabric",
+    "movie costume leather and nylon",
 ]
 
 const WARDROBE_DETAILS = [
@@ -707,6 +763,10 @@ const WARDROBE_DETAILS = [
     "vintage commercial spokesperson outfit",
     "local TV host blazer",
     "homemade costume with visible seams",
+    "movie-star suit with strange proportions",
+    "action-movie jacket",
+    "red-carpet formalwear with no readable logos",
+    "wax museum display clothing",
 ]
 
 const POSE_DIRECTIONS = [
@@ -727,6 +787,9 @@ const POSE_DIRECTIONS = [
     "standing in a backyard like nothing is wrong",
     "presenting itself like a salesman",
     "being photographed like a strange celebrity",
+    "posing like a movie publicity still",
+    "standing like an award-show photo without copying any real event",
+    "crouching like an action hero in a very awkward way",
 ]
 
 const SOURCE_TRANSFORMERS = [
@@ -746,11 +809,15 @@ function weightedPick(items, weightKey = "weightForPeople") {
     const pool = []
 
     for (const item of items) {
-        const weight = Math.max(1, Number(item?.[weightKey] || 1))
-        for (let i = 0; i < weight; i++) pool.push(item)
+        const rawWeight = Number(item?.[weightKey] ?? 1)
+        const weight = Math.max(0, rawWeight)
+
+        for (let i = 0; i < weight; i++) {
+            pool.push(item)
+        }
     }
 
-    return pick(pool)
+    return pick(pool.length ? pool : items)
 }
 
 function chooseFormMode(profile) {
@@ -792,19 +859,44 @@ function chooseFormMode(profile) {
     return pick([...FORM_MODES, ...extras].filter(Boolean))
 }
 
+function pickCharacterArchetype(profile) {
+    if (profile.isPerson) {
+        const personSafe = CHARACTER_ARCHETYPES.filter((item) =>
+            PERSON_SAFE_ARCHETYPE_NAMES.includes(item.name)
+        )
+
+        return pick(personSafe.length ? personSafe : CHARACTER_ARCHETYPES)
+    }
+
+    if (profile.isAnimal) {
+        const animalSafe = CHARACTER_ARCHETYPES.filter((item) =>
+            ANIMAL_ARCHETYPE_NAMES.includes(item.name)
+        )
+
+        return pick(animalSafe.length ? animalSafe : CHARACTER_ARCHETYPES)
+    }
+
+    return pick(CHARACTER_ARCHETYPES)
+}
+
 function buildStyleMix(page) {
     const profile = inferWikiProfile(page)
     const formMode = chooseFormMode(profile)
     const characterArchetype = formMode.characterAllowed
-        ? pick(CHARACTER_ARCHETYPES)
+        ? pickCharacterArchetype(profile)
         : null
+
+    const styleWorld = pick(STYLE_WORLDS)
 
     return {
         profile,
         anchors: extractWikiAnchors(page),
         formMode,
         characterArchetype,
-        styleWorld: pick(STYLE_WORLDS),
+        styleWorld,
+        world: {
+            name: styleWorld,
+        },
         cameraAngle: pick(CAMERA_ANGLES),
         lighting: pick(LIGHTING_STYLES),
         colorMood: pick(COLOR_MOODS),
@@ -819,6 +911,7 @@ function buildWeirdWikiPrompt(page, styleMix) {
     const title = page?.title || "Random Wikipedia Subject"
     const summary = page?.extract || ""
     const wikiImageUrl = getWikipediaImageUrl(page)
+    const isPerson = Boolean(styleMix?.profile?.isPerson)
 
     return `
 Create ONE single standalone weird photograph inspired by this Wikipedia subject.
@@ -871,6 +964,21 @@ Make the source into an object, product, room, place, food, machine, specimen, p
 `
 }
 
+${
+    isPerson
+        ? `
+PERSON-SOURCE RULES:
+This Wikipedia topic is a person or public figure.
+Keep the image person-first and biography-inspired.
+Do NOT turn this person into a random animal, dog, pet, monster, unrelated creature, or unrelated mascot.
+Create a fictional stand-in inspired by the person's public role, profession, era, clothing, posture, source image composition, and career context.
+Do not copy the exact face, identity, or likeness of the real person.
+It should feel like a strange alternate-universe publicity photo, paparazzi photo, movie still, magazine portrait, toy figure, wax figure, TV still, or commercial portrait connected to this person.
+The weird twist should come from the selected character family, camera, lighting, materials, pose, and source details — not from replacing the person with an unrelated animal.
+`
+        : ""
+}
+
 Visual world:
 ${styleMix.styleWorld}
 
@@ -900,6 +1008,7 @@ Make this image look completely different from previous generations.
 Do not reuse the same character head shape, same eye shape, same mouth, same bald mascot look, same portrait setup, or same rubber creature formula.
 If this is a character, its silhouette, face, body, costume, material, setting, and mood must come from the selected character family and the Wikipedia source.
 If this is not a character, do not sneak in a face.
+The image must feel connected to the actual Wikipedia topic, not like a random unrelated weird creature.
 
 Make it look like a photographed image, not polished digital fantasy art.
 It can be bright, funny, awkward, surreal, colorful, domestic, commercial, documentary, toy-like, scientific, or meme-like depending on the selected style and source.
@@ -990,14 +1099,7 @@ async function fetchRandomWikipediaPage(requireImage = true) {
         return hasTitle && hasSummary && (!requireImage || hasImage)
     }
 
-    let pages = []
-
-    try {
-        pages = await fetchRandomBatch()
-    } catch (error) {
-        throw new Error(error?.message || "Wikipedia batch request failed.")
-    }
-
+    const pages = await fetchRandomBatch()
     const validPages = pages.filter(isValidPage)
 
     if (!validPages.length) {
@@ -1017,6 +1119,7 @@ async function fetchRandomWikipediaPage(requireImage = true) {
 
     return pick(validPages)
 }
+
 async function fetchWikipediaPageFromUrl(url) {
     const title = cleanWikiTitleFromUrl(url)
 
