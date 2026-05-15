@@ -918,6 +918,171 @@ const SOURCE_TRANSFORMERS = [
     "make the outfit or setting reflect the source person's profession or public role",
 ]
 
+const LENS_AND_CAMERA_PACKS = [
+    {
+        name: "24mm Wide-Angle Flash",
+        description:
+            "shot on a 24mm wide-angle lens with strong perspective distortion, close camera, enlarged foreground objects, direct flash",
+    },
+    {
+        name: "Fisheye Snapshot",
+        description:
+            "shot with a fisheye lens, warped corners, curved room lines, subject too close to camera, chaotic snapshot energy",
+    },
+    {
+        name: "Disposable Camera Close-Up",
+        description:
+            "cheap disposable camera look, harsh flash, soft focus, red-eye possibility, awkward close framing",
+    },
+    {
+        name: "Telephoto Paparazzi Crop",
+        description:
+            "long-lens paparazzi crop, compressed background, slightly blurry, candid and intrusive feeling",
+    },
+    {
+        name: "Mall Portrait Lens",
+        description:
+            "soft 50mm portrait lens, fake studio backdrop, awkward formal framing, slightly too much headroom",
+    },
+    {
+        name: "Macro Object Lens",
+        description:
+            "macro close-up lens, strange texture detail, object or prop filling the frame, shallow depth of field",
+    },
+    {
+        name: "Security Camera Lens",
+        description:
+            "wide overhead security-camera view, distorted corners, surveillance angle, mundane but unsettling",
+    },
+    {
+        name: "VHS Camcorder Still",
+        description:
+            "VHS camcorder still-frame look, soft resolution, video noise, awkward home-video angle",
+    },
+    {
+        name: "Sports Photographer Low Lens",
+        description:
+            "low-angle sports photographer lens, dramatic foreground, flash, heroic but ridiculous pose",
+    },
+    {
+        name: "Product Catalog Lens",
+        description:
+            "straight-on catalog photography lens, clean object visibility, flat commercial staging",
+    },
+    {
+        name: "Old Magazine Photo Lens",
+        description:
+            "1970s magazine photography lens, soft grain, staged lighting, commercial but strange",
+    },
+    {
+        name: "Bathroom Mirror Camera",
+        description:
+            "camera reflected or implied in a bathroom mirror angle, cramped room perspective, porcelain highlights",
+    },
+]
+
+const BACKGROUND_WORLDS = [
+    {
+        name: "Chaotic Source Shrine",
+        description:
+            "a cluttered background filled with handmade objects, photos, props, trophies, scraps, and strange decorations inspired by the Wikipedia source",
+    },
+    {
+        name: "Fake Movie Set",
+        description:
+            "a low-budget movie set with painted flats, visible props, fake smoke, cables, lights, miniature buildings, and source-related scenery",
+    },
+    {
+        name: "Airport / Hallway Candid",
+        description:
+            "an airport, hotel hallway, or backstage corridor filled with luggage, posters, ropes, strange signs with no readable text, and source-related props",
+    },
+    {
+        name: "Mall Portrait Studio",
+        description:
+            "a fake mall portrait studio backdrop with props, fake plants, soft lights, source-themed objects, and awkward studio staging",
+    },
+    {
+        name: "Museum Display Room",
+        description:
+            "a museum room with glass cases, velvet ropes, dusty labels with no readable text, specimen tables, and artifacts inspired by the source",
+    },
+    {
+        name: "Toy Store Display",
+        description:
+            "a toy store or catalog display filled with bright packaging shapes, plastic shelves, fake accessories, and source-related miniatures",
+    },
+    {
+        name: "Suburban Backyard Scene",
+        description:
+            "a normal backyard, driveway, porch, lawn, fence, grill, folding chairs, and bizarre source-specific objects scattered around",
+    },
+    {
+        name: "Public Access TV Studio",
+        description:
+            "a cheap local TV studio with curtains, chairs, fake plants, prop table, weird lighting, and source-related objects behind the subject",
+    },
+    {
+        name: "Corporate Training Room",
+        description:
+            "a beige office training room with projector carts, folding tables, binders, plastic chairs, charts with no readable text, and source-inspired props",
+    },
+    {
+        name: "Bathroom Aquarium Set",
+        description:
+            "a bathroom transformed into an aquarium-like scene with blue light, porcelain, coral props, wet reflections, and strange source-related objects",
+    },
+    {
+        name: "Hardware Store Aisle",
+        description:
+            "a hardware store aisle with buckets, hoses, tools, metal parts, plastic bins, warning colors, and source-inspired constructed objects",
+    },
+    {
+        name: "School Gym / Science Fair",
+        description:
+            "a school gym or science fair setup with poster boards, folding tables, handmade models, balloons, tape, and source-inspired displays",
+    },
+    {
+        name: "Red Carpet Gone Wrong",
+        description:
+            "a strange red-carpet or publicity-event setting with flash lighting, ropes, fake photographers, odd props, and no readable logos",
+    },
+    {
+        name: "Miniature Diorama World",
+        description:
+            "a tabletop miniature diorama with tiny buildings, fake landscape, toy props, visible scale model details, and source-related objects",
+    },
+]
+
+const BACKGROUND_DENSITY = [
+    "minimal background with one very specific source-related prop",
+    "medium clutter with three to five visible source-related objects",
+    "busy background with many strange props connected to the Wikipedia topic",
+    "overstuffed scene with source-related objects everywhere, but still readable as one photograph",
+    "background tells a second story using objects from the source summary",
+]
+
+const WIKI_PROP_DIRECTIONS = [
+    "extract concrete nouns from the Wikipedia summary and turn them into physical props in the background",
+    "use the source's profession, location, era, or category to choose background objects",
+    "make the background feel like it belongs to the Wikipedia topic, not a random weird room",
+    "include one oversized prop based on the title or source image",
+    "include several tiny background details based on words from the summary",
+    "turn abstract source details into handmade physical props, trophies, tools, posters with no readable text, costumes, or objects",
+    "make the environment feel like a shrine, museum display, film set, store display, or public event dedicated to the source topic",
+]
+
+const SCENE_ACTIONS = [
+    "the subject is being photographed during an awkward staged publicity moment",
+    "the subject appears to have just walked into the bizarre room",
+    "the subject is presenting a strange source-related object to the camera",
+    "the subject is surrounded by props as if in a low-budget documentary reenactment",
+    "the subject is frozen mid-pose while the background feels accidentally chaotic",
+    "the subject is treated like a celebrity guest in a completely inappropriate setting",
+    "the subject is posed like a product model while the background objects explain the source topic",
+    "the scene looks like a real behind-the-scenes photo from a strange production",
+]
+
 const PERSON_TWIST_MODES = [
     "fictional wax museum version",
     "fictional toy-commercial version",
