@@ -2,8 +2,11 @@ const {
     fetchWikipediaPageFromUrl,
     buildPromptFromPage,
     generateImageBuffer,
+    uploadImageToBlob,
     getWikipediaPageUrl,
     getWikipediaImageUrl,
+    saveRecentGeneration,
+    buildRecentItem,
 } = require("./_ramon-shared")
 
 function sendJson(res, status, data) {
@@ -56,18 +59,15 @@ module.exports = async function handler(req, res) {
         const body = await readBody(req)
 
         let page = null
-        let finalPrompt = body.prompt || ""
+        let finalPrompt = String(body.prompt || "").trim()
 
-        if (body.wikiUrl) {
+        if (body.wikiUrl && !finalPrompt) {
             page = await fetchWikipediaPageFromUrl(body.wikiUrl)
-
-            if (!finalPrompt) {
-                const built = buildPromptFromPage(page)
-                finalPrompt = built.prompt
-            }
+            const built = buildPromptFromPage(page)
+            finalPrompt = built.prompt
         }
 
-        if (!finalPrompt.trim()) {
+        if (!finalPrompt) {
             return sendJson(res, 400, {
                 ok: false,
                 error: "Missing prompt.",
@@ -76,13 +76,35 @@ module.exports = async function handler(req, res) {
 
         const generated = await generateImageBuffer(finalPrompt)
 
+        let imageUrl = ""
+
+        try {
+            imageUrl = await uploadImageToBlob({
+                buffer: generated.buffer,
+                filename: "ramon-generation.png",
+                mimeType: generated.mimeType,
+            })
+        } catch {
+            imageUrl = ""
+        }
+
         const imageDataUrl = `data:${generated.mimeType};base64,${generated.b64}`
+        const finalImage = imageUrl || imageDataUrl
+
+        await saveRecentGeneration(
+            buildRecentItem({
+                image: finalImage,
+                page,
+                prompt: finalPrompt,
+                source: "generate",
+            })
+        )
 
         return sendJson(res, 200, {
             ok: true,
-            image: imageDataUrl,
-            imageUrl: imageDataUrl,
-            url: imageDataUrl,
+            image: finalImage,
+            imageUrl: finalImage,
+            url: finalImage,
             prompt: finalPrompt,
             wikiTitle: page?.title || body.wikiTitle || "",
             wikiUrl: page ? getWikipediaPageUrl(page) : body.wikiUrl || "",
