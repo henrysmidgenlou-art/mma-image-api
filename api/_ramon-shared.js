@@ -695,7 +695,10 @@ async function generateImageBuffer(prompt) {
         apiKey: process.env.OPENAI_API_KEY,
     })
 
-    const model = process.env.IMAGE_MODEL || DEFAULT_IMAGE_MODEL
+    const model =
+    process.env.OPENAI_IMAGE_MODEL ||
+    process.env.IMAGE_MODEL ||
+    DEFAULT_IMAGE_MODEL
     const size = process.env.IMAGE_SIZE || DEFAULT_IMAGE_SIZE
     const quality = process.env.IMAGE_QUALITY || DEFAULT_IMAGE_QUALITY
 
